@@ -91,11 +91,47 @@ public class DocumentVisionModule: Module {
         )
       ]
     }
+
+    AsyncFunction("createPdfAsync") {
+      (
+        sourceUris: [String],
+        destinationUri: String,
+        watermarkUri: String?
+      ) -> [String: Any] in
+      let startedAt = CFAbsoluteTimeGetCurrent()
+      let destination = try localFileUrl(from: destinationUri)
+      let sources = try sourceUris.map { try localFileUrl(from: $0) }
+      let watermark = try watermarkUri.map {
+        try localFileUrl(from: $0)
+      }
+      try renderPdf(
+        sources: sources,
+        destination: destination,
+        watermark: watermark
+      )
+      let attributes = try FileManager.default.attributesOfItem(
+        atPath: destination.path
+      )
+      let fileSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
+
+      return [
+        "uri": destination.absoluteString,
+        "numberOfPages": sources.count,
+        "fileSize": fileSize,
+        "processingMs": Int(
+          (CFAbsoluteTimeGetCurrent() - startedAt) * 1_000
+        )
+      ]
+    }
   }
 }
 
 private enum DocumentVisionError: Error {
+  case emptyPdf
+  case invalidFileUrl
+  case pdfDestinationFailed
   case unreadableImage
+  case unreadablePdfImage
   case perspectiveCorrectionFailed
   case renderingFailed
   case jpegDestinationFailed
@@ -111,6 +147,114 @@ private struct RenderedDocument {
   let uri: URL
   let width: Int
   let height: Int
+}
+
+private let pdfPageBounds = CGRect(x: 0, y: 0, width: 595, height: 842)
+
+private func localFileUrl(from value: String) throws -> URL {
+  guard
+    let url = URL(string: value),
+    url.isFileURL
+  else {
+    throw DocumentVisionError.invalidFileUrl
+  }
+  return url
+}
+
+private func loadPdfImage(from url: URL) throws -> CGImage {
+  guard
+    let source = CGImageSourceCreateWithURL(url as CFURL, [
+      kCGImageSourceShouldCache: false
+    ] as CFDictionary),
+    let image = CGImageSourceCreateImageAtIndex(source, 0, [
+      kCGImageSourceShouldCacheImmediately: true
+    ] as CFDictionary)
+  else {
+    throw DocumentVisionError.unreadablePdfImage
+  }
+  return image
+}
+
+private func drawPdfWatermark(
+  _ watermark: CGImage,
+  in context: CGContext,
+  pageBounds: CGRect
+) {
+  let targetWidth = pageBounds.width * 0.27
+  let targetHeight =
+    targetWidth * CGFloat(watermark.height) / CGFloat(watermark.width)
+  let margin = min(pageBounds.width, pageBounds.height) * 0.036
+  let watermarkBounds = CGRect(
+    x: pageBounds.maxX - targetWidth - margin,
+    y: pageBounds.minY + margin,
+    width: targetWidth,
+    height: targetHeight
+  )
+  context.saveGState()
+  context.setAlpha(0.48)
+  context.interpolationQuality = .high
+  context.draw(watermark, in: watermarkBounds)
+  context.restoreGState()
+}
+
+private func renderPdf(
+  sources: [URL],
+  destination: URL,
+  watermark: URL?
+) throws {
+  guard !sources.isEmpty else {
+    throw DocumentVisionError.emptyPdf
+  }
+
+  try FileManager.default.createDirectory(
+    at: destination.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  if FileManager.default.fileExists(atPath: destination.path) {
+    try FileManager.default.removeItem(at: destination)
+  }
+
+  guard
+    let consumer = CGDataConsumer(url: destination as CFURL)
+  else {
+    throw DocumentVisionError.pdfDestinationFailed
+  }
+  var mediaBox = pdfPageBounds
+  guard
+    let context = CGContext(
+      consumer: consumer,
+      mediaBox: &mediaBox,
+      nil
+    )
+  else {
+    throw DocumentVisionError.pdfDestinationFailed
+  }
+  let watermarkImage = try watermark.map(loadPdfImage(from:))
+
+  for source in sources {
+    try autoreleasepool {
+      let image = try loadPdfImage(from: source)
+      context.beginPDFPage(nil)
+      context.setFillColor(CGColor(gray: 1, alpha: 1))
+      context.fill(pdfPageBounds)
+      context.interpolationQuality = .high
+
+      context.draw(image, in: pdfPageBounds)
+      if let watermarkImage {
+        drawPdfWatermark(
+          watermarkImage,
+          in: context,
+          pageBounds: pdfPageBounds
+        )
+      }
+      context.endPDFPage()
+    }
+  }
+  context.closePDF()
+
+  guard FileManager.default.fileExists(atPath: destination.path) else {
+    throw DocumentVisionError.pdfDestinationFailed
+  }
 }
 
 private func imageOrientation(from source: CGImageSource) -> CGImagePropertyOrientation {

@@ -20,3 +20,10 @@ export type VisionProcessedResult = {
   height: number;
   processingMs: number;
 };
+
+export type VisionPdfResult = {
+  uri: string;
+  numberOfPages: number;
+  fileSize: number;
+  processingMs: number;
+};

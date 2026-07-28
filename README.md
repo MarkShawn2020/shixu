@@ -12,7 +12,7 @@
 - 局部阴影补偿、智能提亮、对比度拉伸，以及彩色 / 灰度 / 黑白三种模式
 - 页面缩略图预览、删除、旋转和重新排序
 - 默认添加「手工川工作室」Logo 水印，也可在导出前关闭
-- 多页导出 PDF；图片模式可批量保存到系统相册
+- 原生逐页写入 A4 PDF；图片模式可批量保存到系统相册
 - 整个处理过程在手机本地完成
 
 ## 技术栈
@@ -24,9 +24,10 @@
 - Apple Vision `VNDetectRectanglesRequest`：文档分割没有结果时的原生后备检测
 - `expo-image-manipulator`：拍摄图预缩放与方向标准化
 - iOS Core Image：原生 GPU 透视校正、A 系列纸张比例标准化、`CIDocumentEnhancer` 文档增强、灰度/黑白滤镜与高质量 JPEG 输出
+- iOS Core Graphics：本地 JPEG 整页铺满 A4，单次绘制 Logo 后直接写入多页 PDF
 - Vision 文字行二次校准：纸边首次拉直后，按正文行的公共边距检查并消除残余横向透视
 - 纯 TypeScript：结果校验，以及 Expo Go 或原生链路异常时的完整后备处理
-- `expo-print`：多页 PDF
+- `expo-print`：Expo Go 或旧构建中的后备 PDF 导出
 - `expo-media-library` / `expo-sharing`：保存与分享
 
 ## iPhone Development Build

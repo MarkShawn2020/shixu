@@ -1,12 +1,17 @@
 import { File, Paths } from 'expo-file-system';
+import { Asset } from 'expo-asset';
 import { Asset as MediaAsset, requestPermissionsAsync } from 'expo-media-library';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
+import DocumentVisionModule from '../../modules/document-vision/src/DocumentVisionModule';
 import type { ScanPage } from '../types';
 import { createWatermarkedCopy } from './imagePipeline';
 
 type ExportProgress = (current: number, total: number, label: string) => void;
+const PDF_WATERMARK_ASSET = require('../../assets/brand/shougongchuan-logo.png');
+
+let pdfWatermarkUriPromise: Promise<string> | undefined;
 
 const requireReadyPages = (pages: ScanPage[]) => {
   const readyPages = pages.filter(
@@ -29,6 +34,21 @@ const cleanFilename = (filename: string) => {
 
 async function exportReadyUri(uri: string, watermark: boolean) {
   return watermark ? createWatermarkedCopy(uri) : uri;
+}
+
+async function resolvePdfWatermarkUri() {
+  if (!pdfWatermarkUriPromise) {
+    pdfWatermarkUriPromise = (async () => {
+      const asset = Asset.fromModule(PDF_WATERMARK_ASSET);
+      const downloaded = await asset.downloadAsync();
+      const localUri = downloaded.localUri ?? asset.localUri;
+      if (!localUri) {
+        throw new Error('PDF 水印资源尚未准备完成');
+      }
+      return localUri;
+    })();
+  }
+  return pdfWatermarkUriPromise;
 }
 
 export async function savePagesAsImages(
@@ -62,6 +82,31 @@ export async function createPdf(
   onProgress?: ExportProgress,
 ) {
   const readyPages = requireReadyPages(pages);
+  const destination = new File(
+    Paths.cache,
+    `${cleanFilename(filename)}.pdf`,
+  );
+
+  if (DocumentVisionModule) {
+    try {
+      onProgress?.(
+        readyPages.length,
+        readyPages.length,
+        `正在生成 ${readyPages.length} 页 PDF`,
+      );
+      const result = await DocumentVisionModule.createPdfAsync(
+        readyPages.map((page) => page.processedUri),
+        destination.uri,
+        watermark ? await resolvePdfWatermarkUri() : null,
+      );
+      if (result.uri && result.numberOfPages === readyPages.length) {
+        return result.uri;
+      }
+    } catch {
+      // Expo Go 和旧 Development Build 继续使用 HTML 后备导出。
+    }
+  }
+
   const imageTags: string[] = [];
 
   for (let index = 0; index < readyPages.length; index += 1) {
@@ -123,7 +168,6 @@ export async function createPdf(
     height: 842,
     margins: { top: 0, right: 0, bottom: 0, left: 0 },
   });
-  const destination = new File(Paths.cache, `${cleanFilename(filename)}.pdf`);
   await new File(printed.uri).copy(destination, { overwrite: true });
   return destination.uri;
 }
