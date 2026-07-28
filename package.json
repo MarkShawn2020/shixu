@@ -1,6 +1,6 @@
 {
   "name": "shixu",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "packageManager": "npm@11.9.0",
   "description": "Expo SDK 57 document scanner with automatic perspective correction, smart enhancement, watermarking, image export, and PDF export.",
   "keywords": [
@@ -51,6 +51,11 @@
     "changeset:add": "changeset",
     "version-packages": "changeset version",
     "release:build": "npm run typecheck && npm run doctor && npx expo export --platform ios",
+    "ios:build": "npx --yes eas-cli@21.4.0 build --platform ios --profile production",
+    "ios:submit": "npx --yes eas-cli@21.4.0 submit --platform ios --profile production",
+    "ios:release": "npx --yes eas-cli@21.4.0 build --platform ios --profile production --auto-submit",
+    "store:metadata:lint": "npx --yes eas-cli@21.4.0 metadata:lint",
+    "store:metadata": "npx --yes eas-cli@21.4.0 metadata:push",
     "test:detection": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-document-detection.mjs",
     "typecheck": "tsc --noEmit --pretty false",
     "doctor": "expo-doctor"
