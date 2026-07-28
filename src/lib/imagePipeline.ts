@@ -5,6 +5,7 @@ import { Buffer } from 'buffer';
 import * as base64 from 'base64-js';
 import jpeg from 'jpeg-js';
 
+import DocumentVisionModule from '../../modules/document-vision/src/DocumentVisionModule';
 import type { Point, Quad, ScanFilter, ScanPage } from '../types';
 import {
   defaultDocumentQuad,
@@ -14,7 +15,6 @@ import {
 } from './documentDetection';
 
 const ANALYSIS_WIDTH = 420;
-const LIVE_ANALYSIS_WIDTH = 300;
 const WORKING_WIDTH = 1600;
 const OUTPUT_SHORT_EDGE = 1120;
 const OUTPUT_LONG_EDGE_LIMIT = 1800;
@@ -74,6 +74,93 @@ function deleteTemporaryFile(uri: string) {
     if (file.exists) file.delete();
   } catch {
     // Cache cleanup must never interrupt scanning.
+  }
+}
+
+function normalizedQuadArea(quad: Quad) {
+  const points = [
+    quad.topLeft,
+    quad.topRight,
+    quad.bottomRight,
+    quad.bottomLeft,
+  ];
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const next = points[(index + 1) % points.length];
+    area += points[index].x * next.y - next.x * points[index].y;
+  }
+  return Math.abs(area) / 2;
+}
+
+function isValidVisionQuad(quad: Quad) {
+  const points = [
+    quad.topLeft,
+    quad.topRight,
+    quad.bottomRight,
+    quad.bottomLeft,
+  ];
+  if (
+    points.some(
+      (point) =>
+        !Number.isFinite(point.x) ||
+        !Number.isFinite(point.y) ||
+        point.x < 0 ||
+        point.x > 1 ||
+        point.y < 0 ||
+        point.y > 1,
+    )
+  ) {
+    return false;
+  }
+
+  const crossProducts = points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    const following = points[(index + 2) % points.length];
+    return (
+      (next.x - point.x) * (following.y - next.y) -
+      (next.y - point.y) * (following.x - next.x)
+    );
+  });
+  const consistentlyClockwise = crossProducts.every((value) => value > 0);
+  const consistentlyCounterClockwise = crossProducts.every(
+    (value) => value < 0,
+  );
+  const shortestEdge = Math.min(
+    ...points.map((point, index) =>
+      distance(point, points[(index + 1) % points.length]),
+    ),
+  );
+  const area = normalizedQuadArea(quad);
+  return (
+    (consistentlyClockwise || consistentlyCounterClockwise) &&
+    shortestEdge >= 0.12 &&
+    area >= 0.08 &&
+    area <= 0.94
+  );
+}
+
+async function detectDocumentWithVision(
+  uri: string,
+): Promise<DetectionResult | undefined> {
+  if (!DocumentVisionModule) return undefined;
+
+  try {
+    const result = await DocumentVisionModule.detectDocumentAsync(uri);
+    if (
+      !result ||
+      !Number.isFinite(result.confidence) ||
+      result.confidence < 0.45 ||
+      !isValidVisionQuad(result.quad)
+    ) {
+      return undefined;
+    }
+    return {
+      quad: result.quad,
+      confidence: clamp(result.confidence, 0, 1),
+      usedFallback: false,
+    };
+  } catch {
+    return undefined;
   }
 }
 
@@ -623,7 +710,13 @@ async function analyzeDocument(
 }
 
 export async function detectDocumentPreview(uri: string) {
-  return analyzeDocument(uri, LIVE_ANALYSIS_WIDTH, 0.48);
+  return (
+    (await detectDocumentWithVision(uri)) ?? {
+      quad: defaultDocumentQuad(),
+      confidence: 0,
+      usedFallback: true,
+    }
+  );
 }
 
 export async function renderDocument(
@@ -668,11 +761,21 @@ export async function renderDocument(
 }
 
 export async function prepareDocument(page: ScanPage): Promise<ScanPage> {
-  const detection = await analyzeDocument(
-    page.originalUri,
-    ANALYSIS_WIDTH,
-    0.76,
-  );
+  const visionDetection = await detectDocumentWithVision(page.originalUri);
+  const localFallback = visionDetection
+    ? undefined
+    : await analyzeDocument(page.originalUri, ANALYSIS_WIDTH, 0.76);
+  const detection =
+    visionDetection ??
+    (localFallback &&
+    !localFallback.usedFallback &&
+    localFallback.confidence >= 0.54
+      ? localFallback
+      : {
+          quad: defaultDocumentQuad(),
+          confidence: localFallback?.confidence ?? 0,
+          usedFallback: true,
+        });
   const rendered = await renderDocument(
     page.originalUri,
     detection.quad,

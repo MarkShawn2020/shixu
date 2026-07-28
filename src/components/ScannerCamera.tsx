@@ -124,6 +124,7 @@ export function ScannerCamera({
   const cameraRef = useRef<CameraView>(null);
   const cameraBusyRef = useRef(false);
   const captureIntentRef = useRef(false);
+  const stableDetectionsRef = useRef(0);
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -161,6 +162,7 @@ export function ScannerCamera({
 
         setLiveDetection((previous) => {
           if (detection.usedFallback) {
+            stableDetectionsRef.current = 0;
             return {
               quad: detection.quad,
               confidence: detection.confidence,
@@ -174,16 +176,21 @@ export function ScannerCamera({
             previous && !previous.usedFallback
               ? averageQuadMovement(previous.quad, detection.quad)
               : 1;
+          const consistent =
+            movement < 0.028 && detection.confidence >= 0.62;
+          stableDetectionsRef.current = consistent
+            ? stableDetectionsRef.current + 1
+            : 0;
           return {
             quad:
-              previous && !previous.usedFallback
+              previous && !previous.usedFallback && movement < 0.12
                 ? blendQuad(previous.quad, detection.quad, 0.42)
                 : detection.quad,
             confidence: detection.confidence,
             imageWidth: sample?.width ?? 1,
             imageHeight: sample?.height ?? 1,
             usedFallback: false,
-            stable: movement < 0.034 && detection.confidence >= 0.5,
+            stable: stableDetectionsRef.current >= 2,
           };
         });
       } catch {
@@ -198,6 +205,7 @@ export function ScannerCamera({
     schedule(420);
     return () => {
       cancelled = true;
+      stableDetectionsRef.current = 0;
       if (timer) clearTimeout(timer);
     };
   }, [capturing, permission?.granted, ready]);
@@ -274,6 +282,7 @@ export function ScannerCamera({
   const detectedPoints =
     liveDetection &&
     !liveDetection.usedFallback &&
+    liveDetection.confidence >= 0.52 &&
     cameraLayout.width > 0 &&
     cameraLayout.height > 0
       ? cornerKeys.map((key) =>
@@ -290,7 +299,7 @@ export function ScannerCamera({
     ?.map((point) => `${point.x},${point.y}`)
     .join(' ');
   const paperLocked = Boolean(
-    detectedPoints && liveDetection?.stable && liveDetection.confidence >= 0.5,
+    detectedPoints && liveDetection?.stable && liveDetection.confidence >= 0.62,
   );
 
   return (

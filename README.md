@@ -19,8 +19,10 @@
 
 - Expo SDK 57、React Native 0.86、TypeScript
 - `expo-camera`：连续拍摄
+- Apple Vision `VNDetectDocumentSegmentationRequest`：结合页面内容识别纸张四角
+- Apple Vision `VNDetectRectanglesRequest`：文档分割没有结果时的原生后备检测
 - `expo-image-manipulator`：拍摄图预缩放与方向标准化
-- 纯 TypeScript：纸张边缘检测、透视变换和智能提亮
+- 纯 TypeScript：结果校验、透视变换、智能提亮与低置信度后备
 - `expo-print`：多页 PDF
 - `expo-media-library` / `expo-sharing`：保存与分享
 
