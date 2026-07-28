@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lovstudio.shixu",
+      "bundleIdentifier": "ai.lovstudio.shixu",
       "infoPlist": {
         "NSCameraUsageDescription": "用于连续拍摄并扫描纸质文件。",
         "NSPhotoLibraryAddUsageDescription": "用于将扫描后的图片保存到相册。",
