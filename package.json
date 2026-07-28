@@ -42,7 +42,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/patch-expo-modules-jsi.mjs && node scripts/patch-expo-camera-live-document.mjs",
-    "start": "expo start --dev-client",
+    "start": "expo start --dev-client --scheme shixu",
     "android": "expo run:android",
     "ios": "node scripts/ios-development-build.mjs",
     "web": "expo start --web",
