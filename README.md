@@ -1,4 +1,4 @@
-# 手工川扫描
+# 拾序
 
 一款面向 iPhone、基于 Expo SDK 57 Development Build 运行的本地文件扫描 App。
 
@@ -48,12 +48,12 @@ npm run ios -- --device
 npm start
 ```
 
-让 iPhone 与 Mac 处于同一局域网，然后打开手机上的「手工川扫描」。需要让服务
+让 iPhone 与 Mac 处于同一局域网，然后打开手机上的「拾序」。需要让服务
 长期驻留时可使用：
 
 ```bash
-tmux new-session -d -s shougongchuan-scan 'npm start'
-tmux attach -t shougongchuan-scan
+tmux new-session -d -s shixu 'npm start'
+tmux attach -t shixu
 ```
 
 只有新增或升级原生依赖时才需要重新执行 `npm run ios -- --device`。真机相机只在

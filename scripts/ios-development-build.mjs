@@ -5,7 +5,7 @@ import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const stagingRoot = join(tmpdir(), 'shougongchuan-scan-ios-build');
+const stagingRoot = join(tmpdir(), 'shixu-ios-build');
 const expectedPrefix = `${resolve(tmpdir())}${sep}`;
 
 if (!resolve(stagingRoot).startsWith(expectedPrefix)) {
