@@ -11,7 +11,7 @@
 
 <p align="center">
   <strong>开源版扫描全能王：把随手拍下的纸张，变成规整、清晰、可归档的电子文档。</strong><br>
-  <sub>iPhone · 完全本地处理 · 无账号 · 无后端 · MIT 开源</sub>
+  <sub>iPhone · 完全本地处理 · 无账号 · 无后端 · App Store / TestFlight · MIT 开源</sub>
 </p>
 
 <p align="center">
@@ -183,6 +183,25 @@ npm run ios -- --device
 
 [GitHub Releases](https://github.com/MarkShawn2020/shixu/releases) 提供经过 CI 验证的 iOS 静态导出包与 SHA-256 校验文件。静态导出包用于验证和分发 JavaScript / 资源，不是可直接安装的 IPA；当前真机安装仍走上面的 Development Build 流程。
 
+面向 TestFlight 与 App Store 的生产构建使用 EAS Build。仓库中的
+[`eas.json`](eas.json) 固化生产签名、远程 build number 自动递增和提交配置，
+[`store.config.json`](store.config.json) 固化简体中文商店文案、分类与年龄分级。
+
+```bash
+npm run release:build
+npm run ios:build
+npm run ios:submit
+```
+
+也可以一次完成生产构建并上传 App Store Connect：
+
+```bash
+npm run ios:release
+```
+
+App Store 隐私申报、审核说明与首发清单见
+[`docs/app-store/`](docs/app-store/)。
+
 ## 技术实现
 
 | 环节 | 实现 |
@@ -211,10 +230,10 @@ scripts/                   iOS Development Build 与原生补丁脚本
 ## 当前边界
 
 - 当前重点验证 iPhone 与 iOS 原生增强链路
-- 尚未提供 App Store / TestFlight 安装包
+- App Store / TestFlight 使用 EAS production 构建与提交链路
 - 暂未实现 OCR、可搜索 PDF、电子签名、云同步与团队协作
 - Android 与 Web 不是当前生产级目标
-- 本项目仍处于 `0.x` 阶段，数据结构与交互可能继续调整
+- 本项目进入 `1.x` 首发阶段，数据结构与交互仍会持续演进
 
 这些边界也是很好的贡献入口：如果你关心 OCR、Android 文档检测、可重复测试样本或更完整的分发方式，欢迎提出 Issue 或 PR。
 

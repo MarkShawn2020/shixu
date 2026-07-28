@@ -14,6 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { CornerEditor } from './src/components/CornerEditor';
 import { ExportPanel } from './src/components/ExportPanel';
+import { AboutPanel } from './src/components/AboutPanel';
 import { ReviewWorkspace } from './src/components/ReviewWorkspace';
 import { ScanComplete } from './src/components/ScanComplete';
 import { ScanHistory } from './src/components/ScanHistory';
@@ -88,6 +89,7 @@ export default function App() {
   const [busyPageId, setBusyPageId] = useState<string>();
   const [cornerEditorVisible, setCornerEditorVisible] = useState(false);
   const [exportVisible, setExportVisible] = useState(false);
+  const [aboutVisible, setAboutVisible] = useState(false);
   const [historyRecords, setHistoryRecords] = useState<
     ScanHistoryRecord[]
   >([]);
@@ -487,6 +489,7 @@ export default function App() {
           onFinish={finishCapture}
           onImport={importFromLibrary}
           onOpenHistory={() => void openHistory('camera')}
+          onOpenAbout={() => setAboutVisible(true)}
           onOpenPage={openCapturedPage}
           pages={pages}
         />
@@ -536,6 +539,10 @@ export default function App() {
         onClose={() => setCornerEditorVisible(false)}
         page={selectedPage}
         visible={cornerEditorVisible}
+      />
+      <AboutPanel
+        onClose={() => setAboutVisible(false)}
+        visible={aboutVisible}
       />
       <ExportPanel
         onClose={() => setExportVisible(false)}

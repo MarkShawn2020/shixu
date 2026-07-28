@@ -15,6 +15,7 @@ import {
   FlashlightOff,
   History,
   ImagePlus,
+  Info,
   Sparkles,
 } from 'lucide-react-native';
 import {
@@ -131,6 +132,7 @@ export function ScannerCamera({
   onImport,
   onFinish,
   onOpenHistory,
+  onOpenAbout,
   onOpenPage,
   historyCount,
 }: {
@@ -139,6 +141,7 @@ export function ScannerCamera({
   onImport: () => Promise<void>;
   onFinish: () => Promise<void>;
   onOpenHistory: () => void;
+  onOpenAbout: () => void;
   onOpenPage: (pageId: string) => void;
   historyCount: number;
 }) {
@@ -327,6 +330,12 @@ export function ScannerCamera({
           onPress={onOpenHistory}
           variant="quiet"
         />
+        <PrimaryButton
+          icon={Info}
+          label="隐私与关于"
+          onPress={onOpenAbout}
+          variant="quiet"
+        />
         {pages.length > 0 && (
           <PrimaryButton
             icon={Check}
@@ -453,6 +462,12 @@ export function ScannerCamera({
           </Text>
         </View>
         <View style={styles.topActions}>
+          <RoundIconButton
+            icon={Info}
+            label="隐私与关于"
+            onPress={onOpenAbout}
+            tone="dark"
+          />
           <View>
             <RoundIconButton
               icon={History}

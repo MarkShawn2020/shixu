@@ -1,0 +1,55 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0.0",
+    "copyright": "2026 手工川工作室",
+    "categories": [
+      "PRODUCTIVITY",
+      "BUSINESS"
+    ],
+    "advisory": {
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "kidsAgeBand": null,
+      "ageRatingOverride": "NONE",
+      "koreaAgeRatingOverride": "NONE"
+    },
+    "info": {
+      "zh-Hans": {
+        "title": "拾序",
+        "subtitle": "本地扫描、自动校正与 PDF 导出",
+        "description": "拾序是一款专注隐私的本地文档扫描工具。对准纸张连续拍摄，拾序会自动寻找四角、拉正透视、改善阴影与对比度，再把多页内容整理成 A4 PDF 或高清图片。\n\n核心功能：\n• 连续拍摄多页文件，也可从相册一次导入多张图片\n• 自动识别纸张四角并完成透视校正\n• 彩色、灰度、黑白三种文档增强模式\n• 手动调整边缘、旋转、删除与重新排序页面\n• 生成 A4 多页 PDF，或批量保存高清 JPEG\n• 自动保存本机扫描历史，随时继续编辑与导出\n• 可选手工川工作室轻量水印\n\n隐私设计：\n拾序没有账号系统、广告 SDK、分析 SDK 或业务后端。拍摄、校正、增强、历史保存与 PDF 生成均在设备本地完成。只有当你主动使用系统分享或保存功能时，文件才会进入你选择的位置。\n\n拾序采用 MIT 许可证开源，核心处理链路透明、可审计。",
+        "keywords": [
+          "扫描",
+          "文档",
+          "PDF",
+          "透视校正",
+          "本地处理",
+          "票据",
+          "合同",
+          "图片增强"
+        ],
+        "promoText": "无需账号，不经过云端：连续拍摄、自动校正、智能提亮，多页扫描直接导出 PDF 或高清图片。",
+        "marketingUrl": "https://github.com/MarkShawn2020/shixu",
+        "supportUrl": "https://github.com/MarkShawn2020/shixu/issues",
+        "privacyPolicyUrl": "https://lovstudio.ai/privacy"
+      }
+    },
+    "release": {
+      "automaticRelease": false,
+      "phasedRelease": false
+    }
+  }
+}
