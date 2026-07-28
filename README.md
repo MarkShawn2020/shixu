@@ -22,7 +22,8 @@
 - Apple Vision `VNDetectDocumentSegmentationRequest`：结合页面内容识别纸张四角
 - Apple Vision `VNDetectRectanglesRequest`：文档分割没有结果时的原生后备检测
 - `expo-image-manipulator`：拍摄图预缩放与方向标准化
-- 纯 TypeScript：结果校验、透视变换、智能提亮与低置信度后备
+- iOS Core Image：原生 GPU 透视校正、自适应提亮、灰度/黑白滤镜与 JPEG 输出
+- 纯 TypeScript：结果校验，以及 Expo Go 或原生链路异常时的完整后备处理
 - `expo-print`：多页 PDF
 - `expo-media-library` / `expo-sharing`：保存与分享
 

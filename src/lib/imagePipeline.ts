@@ -719,7 +719,7 @@ export async function detectDocumentPreview(uri: string) {
   );
 }
 
-export async function renderDocument(
+async function renderDocumentWithJavaScript(
   originalUri: string,
   corners: Quad,
   filter: ScanFilter,
@@ -758,6 +758,33 @@ export async function renderDocument(
     'scan',
   );
   return { uri, ...outputSize };
+}
+
+export async function renderDocument(
+  originalUri: string,
+  corners: Quad,
+  filter: ScanFilter,
+): Promise<RenderResult> {
+  if (DocumentVisionModule) {
+    try {
+      const rendered = await DocumentVisionModule.processDocumentAsync(
+        originalUri,
+        corners,
+        filter,
+      );
+      if (
+        rendered.uri &&
+        rendered.width > 0 &&
+        rendered.height > 0
+      ) {
+        return rendered;
+      }
+    } catch {
+      // Expo Go and stale development builds continue through the local JS path.
+    }
+  }
+
+  return renderDocumentWithJavaScript(originalUri, corners, filter);
 }
 
 export async function prepareDocument(page: ScanPage): Promise<ScanPage> {

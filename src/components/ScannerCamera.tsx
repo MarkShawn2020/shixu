@@ -115,11 +115,13 @@ export function ScannerCamera({
   onCapture,
   onImport,
   onFinish,
+  onOpenPage,
 }: {
   pages: ScanPage[];
   onCapture: (photo: CameraCapturedPicture) => Promise<void>;
   onImport: () => Promise<void>;
   onFinish: () => Promise<void>;
+  onOpenPage: (pageId: string) => void;
 }) {
   const cameraRef = useRef<CameraView>(null);
   const cameraBusyRef = useRef(false);
@@ -395,7 +397,19 @@ export function ScannerCamera({
       </View>
 
       {latestPage && (
-        <View pointerEvents="none" style={styles.latestResultCard}>
+        <Pressable
+          accessibilityHint="进入扫描结果预览"
+          accessibilityLabel={`查看第 ${pages.length} 页扫描结果`}
+          accessibilityRole="button"
+          disabled={latestPage.status !== 'ready'}
+          onPress={() => onOpenPage(latestPage.id)}
+          style={({ pressed }) => [
+            styles.latestResultCard,
+            pressed && styles.latestResultCardPressed,
+            latestPage.status !== 'ready' &&
+              styles.latestResultCardDisabled,
+          ]}
+        >
           <View style={styles.latestResultImageWrap}>
             <Image
               resizeMode="cover"
@@ -414,11 +428,11 @@ export function ScannerCamera({
             <Text style={styles.latestResultPage}>第 {pages.length} 页</Text>
             <Text style={styles.latestResultStatus}>
               {latestPage.status === 'ready'
-                ? '已标准化 · 已提亮'
+                ? '已完成 · 点击查看'
                 : '正在智能校正'}
             </Text>
           </View>
-        </View>
+        </Pressable>
       )}
 
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
@@ -584,6 +598,13 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: 'rgba(255,252,247,0.94)',
     ...shadows.floating,
+  },
+  latestResultCardPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.96 }],
+  },
+  latestResultCardDisabled: {
+    opacity: 0.9,
   },
   latestResultImageWrap: {
     width: '100%',

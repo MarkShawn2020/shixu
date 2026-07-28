@@ -188,6 +188,13 @@ export default function App() {
     }
   };
 
+  const openCapturedPage = (pageId: string) => {
+    const page = pages.find((item) => item.id === pageId);
+    if (page?.status !== 'ready') return;
+    setSelectedPageId(pageId);
+    setScreen('review');
+  };
+
   const updateSelectedPage = async (
     operation: (page: ScanPage) => Promise<ScanPage>,
   ) => {
@@ -282,6 +289,7 @@ export default function App() {
           onCapture={appendCapturedPage}
           onFinish={processCapturedPages}
           onImport={importFromLibrary}
+          onOpenPage={openCapturedPage}
           pages={pages}
         />
       ) : (

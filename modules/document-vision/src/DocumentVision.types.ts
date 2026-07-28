@@ -13,3 +13,10 @@ export type VisionDocumentResult = {
   confidence: number;
   area: number;
 };
+
+export type VisionProcessedResult = {
+  uri: string;
+  width: number;
+  height: number;
+  processingMs: number;
+};
