@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  type LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -20,15 +21,94 @@ import {
   type CameraCapturedPicture,
   type FlashMode,
 } from 'expo-camera';
+import { File } from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 
+import { detectDocumentPreview } from '../lib/imagePipeline';
 import { colors, radii, shadows } from '../theme';
-import type { ScanPage } from '../types';
+import type { Point, Quad, ScanPage } from '../types';
 import { PrimaryButton, RoundIconButton } from './Controls';
 
 const flashModes: FlashMode[] = ['off', 'auto', 'on'];
+const cornerKeys = [
+  'topLeft',
+  'topRight',
+  'bottomRight',
+  'bottomLeft',
+] as const;
+const LIVE_SCAN_DELAY = 620;
+
+type LiveDetection = {
+  quad: Quad;
+  confidence: number;
+  imageWidth: number;
+  imageHeight: number;
+  usedFallback: boolean;
+  stable: boolean;
+};
+
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+
+function blendQuad(previous: Quad, next: Quad, amount: number): Quad {
+  const blendPoint = (first: Point, second: Point): Point => ({
+    x: first.x + (second.x - first.x) * amount,
+    y: first.y + (second.y - first.y) * amount,
+  });
+  return {
+    topLeft: blendPoint(previous.topLeft, next.topLeft),
+    topRight: blendPoint(previous.topRight, next.topRight),
+    bottomRight: blendPoint(previous.bottomRight, next.bottomRight),
+    bottomLeft: blendPoint(previous.bottomLeft, next.bottomLeft),
+  };
+}
+
+function averageQuadMovement(previous: Quad, next: Quad) {
+  return (
+    cornerKeys.reduce(
+      (total, key) =>
+        total +
+        Math.hypot(
+          previous[key].x - next[key].x,
+          previous[key].y - next[key].y,
+        ),
+      0,
+    ) / cornerKeys.length
+  );
+}
+
+function projectPoint(
+  point: Point,
+  imageWidth: number,
+  imageHeight: number,
+  viewWidth: number,
+  viewHeight: number,
+) {
+  const scale = Math.max(
+    viewWidth / Math.max(1, imageWidth),
+    viewHeight / Math.max(1, imageHeight),
+  );
+  const displayedWidth = imageWidth * scale;
+  const displayedHeight = imageHeight * scale;
+  return {
+    x: (viewWidth - displayedWidth) / 2 + point.x * displayedWidth,
+    y: (viewHeight - displayedHeight) / 2 + point.y * displayedHeight,
+  };
+}
+
+function discardCameraSample(uri?: string) {
+  if (!uri) return;
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    // Sampling files live in cache; cleanup failure is not user-facing.
+  }
+}
 
 export function ScannerCamera({
   pages,
@@ -42,24 +122,111 @@ export function ScannerCamera({
   onFinish: () => Promise<void>;
 }) {
   const cameraRef = useRef<CameraView>(null);
+  const cameraBusyRef = useRef(false);
+  const captureIntentRef = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [flash, setFlash] = useState<FlashMode>('off');
+  const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
+  const [liveDetection, setLiveDetection] = useState<LiveDetection>();
+
+  useEffect(() => {
+    if (!ready || !permission?.granted || capturing) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (milliseconds: number) => {
+      timer = setTimeout(() => void sampleFrame(), milliseconds);
+    };
+    const sampleFrame = async () => {
+      if (cancelled) return;
+      if (cameraBusyRef.current || captureIntentRef.current) {
+        schedule(180);
+        return;
+      }
+
+      cameraBusyRef.current = true;
+      let sample: CameraCapturedPicture | undefined;
+      try {
+        sample = await cameraRef.current?.takePictureAsync({
+          quality: 0.24,
+          exif: false,
+          shutterSound: false,
+          skipProcessing: false,
+        });
+        if (!sample || cancelled || captureIntentRef.current) return;
+        const detection = await detectDocumentPreview(sample.uri);
+        if (cancelled || captureIntentRef.current) return;
+
+        setLiveDetection((previous) => {
+          if (detection.usedFallback) {
+            return {
+              quad: detection.quad,
+              confidence: detection.confidence,
+              imageWidth: sample?.width ?? 1,
+              imageHeight: sample?.height ?? 1,
+              usedFallback: true,
+              stable: false,
+            };
+          }
+          const movement =
+            previous && !previous.usedFallback
+              ? averageQuadMovement(previous.quad, detection.quad)
+              : 1;
+          return {
+            quad:
+              previous && !previous.usedFallback
+                ? blendQuad(previous.quad, detection.quad, 0.42)
+                : detection.quad,
+            confidence: detection.confidence,
+            imageWidth: sample?.width ?? 1,
+            imageHeight: sample?.height ?? 1,
+            usedFallback: false,
+            stable: movement < 0.034 && detection.confidence >= 0.5,
+          };
+        });
+      } catch {
+        // The next sample retries automatically; manual capture stays available.
+      } finally {
+        discardCameraSample(sample?.uri);
+        cameraBusyRef.current = false;
+        if (!cancelled) schedule(LIVE_SCAN_DELAY);
+      }
+    };
+
+    schedule(420);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [capturing, permission?.granted, ready]);
 
   const capture = async () => {
     if (!ready || capturing) return;
+    captureIntentRef.current = true;
     setCapturing(true);
     try {
+      await delay(90);
+      while (cameraBusyRef.current) await delay(35);
+      cameraBusyRef.current = true;
       const photo = await cameraRef.current?.takePictureAsync({
         quality: 0.94,
         exif: false,
+        shutterSound: true,
         skipProcessing: false,
       });
       if (photo) await onCapture(photo);
     } finally {
+      cameraBusyRef.current = false;
+      captureIntentRef.current = false;
       setCapturing(false);
     }
+  };
+
+  const measureCamera = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setCameraLayout({ width, height });
   };
 
   const cycleFlash = () => {
@@ -104,14 +271,35 @@ export function ScannerCamera({
   }
 
   const latestPage = pages.at(-1);
+  const detectedPoints =
+    liveDetection &&
+    !liveDetection.usedFallback &&
+    cameraLayout.width > 0 &&
+    cameraLayout.height > 0
+      ? cornerKeys.map((key) =>
+          projectPoint(
+            liveDetection.quad[key],
+            liveDetection.imageWidth,
+            liveDetection.imageHeight,
+            cameraLayout.width,
+            cameraLayout.height,
+          ),
+        )
+      : undefined;
+  const detectedPointString = detectedPoints
+    ?.map((point) => `${point.x},${point.y}`)
+    .join(' ');
+  const paperLocked = Boolean(
+    detectedPoints && liveDetection?.stable && liveDetection.confidence >= 0.5,
+  );
 
   return (
-    <View style={styles.container}>
+    <View onLayout={measureCamera} style={styles.container}>
       <CameraView
         active
-        animateShutter
+        animateShutter={capturing}
         facing="back"
-        flash={flash}
+        flash={capturing ? flash : 'off'}
         mode="picture"
         onCameraReady={() => setReady(true)}
         ref={cameraRef}
@@ -139,22 +327,90 @@ export function ScannerCamera({
         />
       </SafeAreaView>
 
-      <View pointerEvents="none" style={styles.guideWrap}>
-        <Svg height="100%" width="100%">
-          <Path
-            d="M36 92 V48 Q36 36 48 36 H92 M268 36 H312 Q324 36 324 48 V92 M324 368 V412 Q324 424 312 424 H268 M92 424 H48 Q36 424 36 412 V368"
-            fill="none"
-            stroke={colors.primarySoft}
-            strokeLinecap="round"
-            strokeWidth={4}
-            vectorEffect="non-scaling-stroke"
-          />
-        </Svg>
-        <View style={styles.guideCaption}>
-          <Sparkles color={colors.primarySoft} size={15} />
-          <Text style={styles.guideCaptionText}>拍完自动拉直并提亮</Text>
+      {detectedPoints && detectedPointString ? (
+        <View pointerEvents="none" style={styles.liveEdgeOverlay}>
+          <Svg height="100%" width="100%">
+            <Polygon
+              fill={
+                paperLocked
+                  ? 'rgba(132,149,122,0.13)'
+                  : 'rgba(217,119,87,0.11)'
+              }
+              points={detectedPointString}
+              stroke={paperLocked ? colors.sageSoft : colors.primarySoft}
+              strokeLinejoin="round"
+              strokeWidth={4}
+            />
+            {detectedPoints.map((point, index) => (
+              <Circle
+                cx={point.x}
+                cy={point.y}
+                fill={paperLocked ? colors.sageSoft : colors.primarySoft}
+                key={cornerKeys[index]}
+                r={6}
+                stroke="rgba(17,17,15,0.5)"
+                strokeWidth={2}
+              />
+            ))}
+          </Svg>
         </View>
+      ) : (
+        <View pointerEvents="none" style={styles.guideWrap}>
+          <Svg height="100%" width="100%">
+            <Path
+              d="M36 92 V48 Q36 36 48 36 H92 M268 36 H312 Q324 36 324 48 V92 M324 368 V412 Q324 424 312 424 H268 M92 424 H48 Q36 424 36 412 V368"
+              fill="none"
+              stroke={colors.primarySoft}
+              strokeLinecap="round"
+              strokeWidth={4}
+              vectorEffect="non-scaling-stroke"
+            />
+          </Svg>
+        </View>
+      )}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.guideCaption,
+          paperLocked && styles.guideCaptionLocked,
+        ]}
+      >
+        <Sparkles color={colors.primarySoft} size={15} />
+        <Text style={styles.guideCaptionText}>
+          {paperLocked
+            ? '已锁定纸张边缘'
+            : detectedPoints
+              ? '正在稳定四角'
+              : '正在识别纸张'}
+        </Text>
       </View>
+
+      {latestPage && (
+        <View pointerEvents="none" style={styles.latestResultCard}>
+          <View style={styles.latestResultImageWrap}>
+            <Image
+              resizeMode="cover"
+              source={{
+                uri: latestPage.processedUri ?? latestPage.originalUri,
+              }}
+              style={StyleSheet.absoluteFill}
+            />
+            {latestPage.status !== 'ready' && (
+              <View style={styles.latestResultBusy}>
+                <ActivityIndicator color={colors.white} size="small" />
+              </View>
+            )}
+          </View>
+          <View style={styles.latestResultCopy}>
+            <Text style={styles.latestResultPage}>第 {pages.length} 页</Text>
+            <Text style={styles.latestResultStatus}>
+              {latestPage.status === 'ready'
+                ? '已标准化 · 已提亮'
+                : '正在智能校正'}
+            </Text>
+          </View>
+        </View>
+      )}
 
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
         <View style={styles.captureRow}>
@@ -169,7 +425,9 @@ export function ScannerCamera({
             {latestPage ? (
               <>
                 <Image
-                  source={{ uri: latestPage.originalUri }}
+                  source={{
+                    uri: latestPage.processedUri ?? latestPage.originalUri,
+                  }}
                   style={styles.latestThumbnail}
                 />
                 <View style={styles.pageBadge}>
@@ -212,7 +470,9 @@ export function ScannerCamera({
             <View style={styles.donePlaceholder} />
           )}
         </View>
-        <Text style={styles.bottomHint}>每页拍完即可继续，不必等待处理</Text>
+        <Text style={styles.bottomHint}>
+          实时识别边缘 · 拍后自动标准化并提亮
+        </Text>
       </SafeAreaView>
     </View>
   );
@@ -281,8 +541,8 @@ const styles = StyleSheet.create({
   },
   guideCaption: {
     position: 'absolute',
+    top: 124,
     alignSelf: 'center',
-    bottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
@@ -291,10 +551,63 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: 'rgba(17,17,15,0.48)',
   },
+  guideCaptionLocked: {
+    backgroundColor: 'rgba(56,73,51,0.74)',
+  },
   guideCaptionText: {
     color: colors.white,
     fontSize: 13,
     fontWeight: '600',
+  },
+  liveEdgeOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  latestResultCard: {
+    position: 'absolute',
+    right: 18,
+    bottom: 154,
+    width: 142,
+    padding: 7,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,252,247,0.94)',
+    ...shadows.floating,
+  },
+  latestResultImageWrap: {
+    width: '100%',
+    height: 94,
+    overflow: 'hidden',
+    borderRadius: 12,
+    backgroundColor: colors.cameraSoft,
+  },
+  latestResultBusy: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17,17,15,0.45)',
+  },
+  latestResultCopy: {
+    paddingHorizontal: 3,
+    paddingTop: 7,
+    paddingBottom: 2,
+  },
+  latestResultPage: {
+    color: colors.ink,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  latestResultStatus: {
+    color: colors.primaryDark,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
   },
   bottomBar: {
     position: 'absolute',

@@ -46,6 +46,7 @@
     "android": "expo run:android",
     "ios": "node scripts/ios-development-build.mjs",
     "web": "expo start --web",
+    "test:detection": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-document-detection.mjs",
     "typecheck": "tsc --noEmit --pretty false",
     "doctor": "expo-doctor"
   },

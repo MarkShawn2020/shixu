@@ -9,10 +9,12 @@ import type { Point, Quad, ScanFilter, ScanPage } from '../types';
 import {
   defaultDocumentQuad,
   detectDocument,
+  type DetectionResult,
   type PixelImage,
 } from './documentDetection';
 
 const ANALYSIS_WIDTH = 420;
+const LIVE_ANALYSIS_WIDTH = 300;
 const WORKING_WIDTH = 1600;
 const OUTPUT_SHORT_EDGE = 1120;
 const OUTPUT_LONG_EDGE_LIMIT = 1800;
@@ -60,6 +62,20 @@ const pixelPoint = (point: Point, width: number, height: number): Point => ({
   x: clamp(point.x, 0, 1) * Math.max(1, width - 1),
   y: clamp(point.y, 0, 1) * Math.max(1, height - 1),
 });
+
+const yieldToUi = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
+function deleteTemporaryFile(uri: string) {
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    // Cache cleanup must never interrupt scanning.
+  }
+}
 
 async function prepareJpeg(
   uri: string,
@@ -241,7 +257,7 @@ function sampleBilinear(
   target[targetIndex + 3] = 255;
 }
 
-function warpPerspective(
+async function warpPerspective(
   source: DecodedImage,
   quad: Point[],
   width: number,
@@ -278,6 +294,7 @@ function warpPerspective(
         (y * width + x) * 4,
       );
     }
+    if (y > 0 && y % 40 === 0) await yieldToUi();
   }
 
   return output;
@@ -329,7 +346,7 @@ function otsuFromHistogram(histogram: Uint32Array, total: number) {
   return bestThreshold;
 }
 
-function enhanceDocument(
+async function enhanceDocument(
   data: Uint8Array,
   width: number,
   height: number,
@@ -337,6 +354,14 @@ function enhanceDocument(
 ) {
   const histogram = new Uint32Array(256);
   const pixels = width * height;
+  const tileSize = Math.max(72, Math.round(Math.min(width, height) / 11));
+  const tileColumns = Math.max(1, Math.ceil(width / tileSize));
+  const tileRows = Math.max(1, Math.ceil(height / tileSize));
+  const tileHistograms = Array.from(
+    { length: tileColumns * tileRows },
+    () => new Uint32Array(256),
+  );
+  const tileSamples = new Uint32Array(tileColumns * tileRows);
   let redMean = 0;
   let greenMean = 0;
   let blueMean = 0;
@@ -349,10 +374,18 @@ function enhanceDocument(
     const blue = data[source + 2];
     const light = Math.round(red * 0.299 + green * 0.587 + blue * 0.114);
     histogram[light] += 1;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    const tileIndex =
+      Math.min(tileRows - 1, Math.floor(y / tileSize)) * tileColumns +
+      Math.min(tileColumns - 1, Math.floor(x / tileSize));
+    tileHistograms[tileIndex][light] += 1;
+    tileSamples[tileIndex] += 1;
     redMean += red;
     greenMean += green;
     blueMean += blue;
     samples += 1;
+    if (index > 0 && index % 240000 === 0) await yieldToUi();
   }
 
   const low = histogramPercentile(histogram, samples, 0.018);
@@ -360,6 +393,33 @@ function enhanceDocument(
     low + 48,
     histogramPercentile(histogram, samples, 0.985),
   );
+  const tileBackgrounds = new Float32Array(tileColumns * tileRows);
+  for (let index = 0; index < tileBackgrounds.length; index += 1) {
+    tileBackgrounds[index] = histogramPercentile(
+      tileHistograms[index],
+      tileSamples[index],
+      0.88,
+    );
+  }
+  const localBackgroundAt = (x: number, y: number) => {
+    const gridX = x / tileSize - 0.5;
+    const gridY = y / tileSize - 0.5;
+    const left = clamp(Math.floor(gridX), 0, tileColumns - 1);
+    const right = clamp(left + 1, 0, tileColumns - 1);
+    const top = clamp(Math.floor(gridY), 0, tileRows - 1);
+    const bottom = clamp(top + 1, 0, tileRows - 1);
+    const xWeight = clamp(gridX - Math.floor(gridX), 0, 1);
+    const yWeight = clamp(gridY - Math.floor(gridY), 0, 1);
+    const topBackground =
+      tileBackgrounds[top * tileColumns + left] * (1 - xWeight) +
+      tileBackgrounds[top * tileColumns + right] * xWeight;
+    const bottomBackground =
+      tileBackgrounds[bottom * tileColumns + left] * (1 - xWeight) +
+      tileBackgrounds[bottom * tileColumns + right] * xWeight;
+    return (
+      topBackground * (1 - yWeight) + bottomBackground * yWeight
+    );
+  };
   redMean /= Math.max(1, samples);
   greenMean /= Math.max(1, samples);
   blueMean /= Math.max(1, samples);
@@ -385,9 +445,19 @@ function enhanceDocument(
       data[source + 1] * 0.587 +
       data[source + 2] * 0.114;
     const normalized = clamp((light - low) / (high - low), 0, 1);
-    const lifted = Math.round(255 * normalized ** 0.84);
+    const globalLifted = 255 * normalized ** 0.84;
+    const background = localBackgroundAt(
+      index % width,
+      Math.floor(index / width),
+    );
+    const localLifted =
+      244 * (light / Math.max(36, background)) ** 0.9;
+    const lifted = Math.round(
+      clamp(globalLifted * 0.46 + localLifted * 0.54, 0, 255),
+    );
     normalizedLights[index] = lifted;
     if (index % 5 === 0) transformedHistogram[lifted] += 1;
+    if (index > 0 && index % 180000 === 0) await yieldToUi();
   }
   const blackWhiteThreshold = otsuFromHistogram(
     transformedHistogram,
@@ -434,6 +504,7 @@ function enhanceDocument(
       0,
       255,
     );
+    if (index > 0 && index % 180000 === 0) await yieldToUi();
   }
 }
 
@@ -530,8 +601,29 @@ export async function persistCapturedImage(uri: string) {
     Paths.cache,
     `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`,
   );
-  await new File(uri).copy(destination, { overwrite: true });
+  try {
+    await new File(uri).copy(destination, { overwrite: true });
+  } finally {
+    if (uri !== destination.uri) deleteTemporaryFile(uri);
+  }
   return destination.uri;
+}
+
+async function analyzeDocument(
+  uri: string,
+  width: number,
+  quality: number,
+): Promise<DetectionResult> {
+  const analysis = await prepareJpeg(uri, width, quality);
+  try {
+    return detectDocument(analysis.decoded as PixelImage);
+  } finally {
+    deleteTemporaryFile(analysis.uri);
+  }
+}
+
+export async function detectDocumentPreview(uri: string) {
+  return analyzeDocument(uri, LIVE_ANALYSIS_WIDTH, 0.48);
 }
 
 export async function renderDocument(
@@ -547,13 +639,18 @@ export async function renderDocument(
     pixelPoint(corners.bottomLeft, working.width, working.height),
   ];
   const outputSize = calculateOutputSize(quad);
-  const warped = warpPerspective(
-    working.decoded,
-    quad,
-    outputSize.width,
-    outputSize.height,
-  );
-  enhanceDocument(
+  let warped: Uint8Array;
+  try {
+    warped = await warpPerspective(
+      working.decoded,
+      quad,
+      outputSize.width,
+      outputSize.height,
+    );
+  } finally {
+    deleteTemporaryFile(working.uri);
+  }
+  await enhanceDocument(
     warped,
     outputSize.width,
     outputSize.height,
@@ -571,8 +668,11 @@ export async function renderDocument(
 }
 
 export async function prepareDocument(page: ScanPage): Promise<ScanPage> {
-  const analysis = await prepareJpeg(page.originalUri, ANALYSIS_WIDTH, 0.76);
-  const detection = detectDocument(analysis.decoded as PixelImage);
+  const detection = await analyzeDocument(
+    page.originalUri,
+    ANALYSIS_WIDTH,
+    0.76,
+  );
   const rendered = await renderDocument(
     page.originalUri,
     detection.quad,

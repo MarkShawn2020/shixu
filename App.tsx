@@ -37,8 +37,33 @@ type AppScreen = 'camera' | 'review';
 const makePageId = (counter: number) =>
   `${Date.now()}-${counter}-${Math.random().toString(36).slice(2, 7)}`;
 
+async function preparePageWithFallback(page: ScanPage) {
+  try {
+    return await prepareDocument(page);
+  } catch (primaryError) {
+    try {
+      return await useFallbackDocument(page);
+    } catch {
+      return {
+        ...page,
+        processedUri: page.originalUri,
+        processedWidth: page.originalWidth,
+        processedHeight: page.originalHeight,
+        status: 'ready' as const,
+        detectionConfidence: 0,
+        errorMessage:
+          primaryError instanceof Error
+            ? primaryError.message
+            : '自动校正需要手动调整',
+      };
+    }
+  }
+}
+
 export default function App() {
   const pageCounter = useRef(0);
+  const processingQueue = useRef<Promise<void>>(Promise.resolve());
+  const processingTasks = useRef(new Map<string, Promise<ScanPage>>());
   const [screen, setScreen] = useState<AppScreen>('camera');
   const [pages, setPages] = useState<ScanPage[]>([]);
   const [selectedPageId, setSelectedPageId] = useState('');
@@ -55,6 +80,26 @@ export default function App() {
     [pages, selectedPageId],
   );
 
+  const enqueuePageProcessing = (page: ScanPage) => {
+    const existing = processingTasks.current.get(page.id);
+    if (existing) return existing;
+
+    const task = processingQueue.current.then(() =>
+      preparePageWithFallback(page),
+    );
+    processingQueue.current = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    processingTasks.current.set(page.id, task);
+    void task.then((updated) => {
+      setPages((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+    });
+    return task;
+  };
+
   const appendCapturedPage = async (photo: CameraCapturedPicture) => {
     const originalUri = await persistCapturedImage(photo.uri);
     pageCounter.current += 1;
@@ -64,9 +109,10 @@ export default function App() {
       originalWidth: photo.width,
       originalHeight: photo.height,
       filter: 'color',
-      status: 'captured',
+      status: 'processing',
     };
     setPages((current) => [...current, page]);
+    enqueuePageProcessing(page);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -81,7 +127,7 @@ export default function App() {
     });
     if (result.canceled) return;
 
-    const imported = result.assets.map((asset) => {
+    const imported: ScanPage[] = result.assets.map((asset) => {
       pageCounter.current += 1;
       return {
         id: makePageId(pageCounter.current),
@@ -89,10 +135,11 @@ export default function App() {
         originalWidth: asset.width,
         originalHeight: asset.height,
         filter: 'color' as const,
-        status: 'captured' as const,
+        status: 'processing' as const,
       };
     });
     setPages((current) => [...current, ...imported]);
+    imported.forEach(enqueuePageProcessing);
     await Haptics.notificationAsync(
       Haptics.NotificationFeedbackType.Success,
     );
@@ -126,31 +173,7 @@ export default function App() {
         label: `正在识别第 ${position + 1} 页边缘`,
       });
 
-      try {
-        working[pageIndex] = await prepareDocument(page);
-      } catch (primaryError) {
-        setProcessing({
-          current: position + 1,
-          total: pendingIndexes.length,
-          label: `第 ${position + 1} 页使用标准边框校正`,
-        });
-        try {
-          working[pageIndex] = await useFallbackDocument(page);
-        } catch {
-          working[pageIndex] = {
-            ...page,
-            processedUri: page.originalUri,
-            processedWidth: page.originalWidth,
-            processedHeight: page.originalHeight,
-            status: 'ready',
-            detectionConfidence: 0,
-            errorMessage:
-              primaryError instanceof Error
-                ? primaryError.message
-                : '自动校正需要手动调整',
-          };
-        }
-      }
+      working[pageIndex] = await enqueuePageProcessing(page);
       setPages([...working]);
     }
 
@@ -202,6 +225,7 @@ export default function App() {
   };
 
   const deletePage = (pageId: string) => {
+    processingTasks.current.delete(pageId);
     const index = pages.findIndex((page) => page.id === pageId);
     const nextPages = pages.filter((page) => page.id !== pageId);
     setPages(nextPages);
