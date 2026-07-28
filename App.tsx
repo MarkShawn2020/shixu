@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { CornerEditor } from './src/components/CornerEditor';
 import { ExportPanel } from './src/components/ExportPanel';
 import { ReviewWorkspace } from './src/components/ReviewWorkspace';
+import { ScanHistory } from './src/components/ScanHistory';
 import { ScannerCamera } from './src/components/ScannerCamera';
 import { shareImage } from './src/lib/exportDocuments';
 import {
@@ -24,15 +25,22 @@ import {
   reprocessDocument,
   useFallbackDocument,
 } from './src/lib/imagePipeline';
+import {
+  createScanHistoryId,
+  deleteScanHistory,
+  loadScanHistory,
+  saveScanHistory,
+} from './src/lib/scanHistory';
 import { colors, radii, shadows } from './src/theme';
 import type {
   ProcessingProgress,
   Quad,
   ScanFilter,
+  ScanHistoryRecord,
   ScanPage,
 } from './src/types';
 
-type AppScreen = 'camera' | 'review';
+type AppScreen = 'camera' | 'review' | 'history';
 
 const makePageId = (counter: number) =>
   `${Date.now()}-${counter}-${Math.random().toString(36).slice(2, 7)}`;
@@ -64,6 +72,12 @@ export default function App() {
   const pageCounter = useRef(0);
   const processingQueue = useRef<Promise<void>>(Promise.resolve());
   const processingTasks = useRef(new Map<string, Promise<ScanPage>>());
+  const historySaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const historySaveTimer = useRef<
+    ReturnType<typeof setTimeout> | undefined
+  >(undefined);
+  const activeHistoryId = useRef(createScanHistoryId());
+  const skipNextHistorySave = useRef(false);
   const [screen, setScreen] = useState<AppScreen>('camera');
   const [pages, setPages] = useState<ScanPage[]>([]);
   const [selectedPageId, setSelectedPageId] = useState('');
@@ -71,6 +85,10 @@ export default function App() {
   const [busyPageId, setBusyPageId] = useState<string>();
   const [cornerEditorVisible, setCornerEditorVisible] = useState(false);
   const [exportVisible, setExportVisible] = useState(false);
+  const [historyRecords, setHistoryRecords] = useState<
+    ScanHistoryRecord[]
+  >([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   const selectedPage = useMemo(
     () =>
@@ -79,6 +97,71 @@ export default function App() {
       pages[0],
     [pages, selectedPageId],
   );
+
+  const refreshHistory = async () => {
+    const records = await loadScanHistory();
+    setHistoryRecords(records);
+    return records;
+  };
+
+  const queueHistorySave = (
+    recordId: string,
+    snapshot: ScanPage[],
+  ) => {
+    const task = historySaveQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        await saveScanHistory(recordId, snapshot);
+        await refreshHistory();
+      });
+    historySaveQueue.current = task.catch((error) => {
+      console.warn('本机扫描历史保存失败', error);
+    });
+    return task;
+  };
+
+  useEffect(() => {
+    let active = true;
+    void loadScanHistory()
+      .then((records) => {
+        if (active) setHistoryRecords(records);
+      })
+      .catch((error) => {
+        console.warn('本机扫描历史读取失败', error);
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (skipNextHistorySave.current) {
+      skipNextHistorySave.current = false;
+      return;
+    }
+    if (historySaveTimer.current) {
+      clearTimeout(historySaveTimer.current);
+    }
+    const readyPages = pages.filter(
+      (page) => page.status === 'ready' && page.processedUri,
+    );
+    if (!readyPages.length) return;
+
+    const recordId = activeHistoryId.current;
+    historySaveTimer.current = setTimeout(() => {
+      historySaveTimer.current = undefined;
+      void queueHistorySave(recordId, readyPages);
+    }, 420);
+    return () => {
+      if (historySaveTimer.current) {
+        clearTimeout(historySaveTimer.current);
+        historySaveTimer.current = undefined;
+      }
+    };
+  }, [pages]);
 
   const enqueuePageProcessing = (page: ScanPage) => {
     const existing = processingTasks.current.get(page.id);
@@ -237,8 +320,20 @@ export default function App() {
     const nextPages = pages.filter((page) => page.id !== pageId);
     setPages(nextPages);
     if (!nextPages.length) {
+      if (historySaveTimer.current) {
+        clearTimeout(historySaveTimer.current);
+        historySaveTimer.current = undefined;
+      }
+      const deletedRecordId = activeHistoryId.current;
+      activeHistoryId.current = createScanHistoryId();
       setSelectedPageId('');
       setScreen('camera');
+      void historySaveQueue.current
+        .then(() => deleteScanHistory(deletedRecordId))
+        .then(refreshHistory)
+        .catch((error) => {
+          console.warn('本机扫描历史删除失败', error);
+        });
       return;
     }
     const nextSelection = nextPages[Math.min(index, nextPages.length - 1)];
@@ -279,6 +374,74 @@ export default function App() {
     }
   };
 
+  const openHistory = async () => {
+    setScreen('history');
+    setHistoryLoading(true);
+    if (historySaveTimer.current) {
+      clearTimeout(historySaveTimer.current);
+      historySaveTimer.current = undefined;
+    }
+    const readyPages = pages.filter(
+      (page) => page.status === 'ready' && page.processedUri,
+    );
+    try {
+      if (readyPages.length) {
+        await queueHistorySave(activeHistoryId.current, readyPages);
+      } else {
+        await historySaveQueue.current;
+        await refreshHistory();
+      }
+    } catch (error) {
+      console.warn('进入扫描历史前保存失败', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openHistoryRecord = (record: ScanHistoryRecord) => {
+    activeHistoryId.current = record.id;
+    skipNextHistorySave.current = true;
+    setPages(record.pages);
+    setSelectedPageId(record.pages[0]?.id ?? '');
+    setScreen('review');
+  };
+
+  const startNewScan = () => {
+    const readyPages = pages.filter(
+      (page) => page.status === 'ready' && page.processedUri,
+    );
+    if (historySaveTimer.current) {
+      clearTimeout(historySaveTimer.current);
+      historySaveTimer.current = undefined;
+    }
+    if (readyPages.length) {
+      void queueHistorySave(activeHistoryId.current, readyPages);
+    }
+    processingTasks.current.clear();
+    activeHistoryId.current = createScanHistoryId();
+    setPages([]);
+    setSelectedPageId('');
+    setScreen('camera');
+  };
+
+  const deleteHistoryRecord = async (recordId: string) => {
+    if (historySaveTimer.current) {
+      clearTimeout(historySaveTimer.current);
+      historySaveTimer.current = undefined;
+    }
+    if (activeHistoryId.current === recordId) {
+      activeHistoryId.current = createScanHistoryId();
+      setPages([]);
+      setSelectedPageId('');
+    }
+    await historySaveQueue.current;
+    await deleteScanHistory(recordId);
+    await refreshHistory();
+    await Haptics.notificationAsync(
+      Haptics.NotificationFeedbackType.Success,
+    );
+  };
+
   return (
     <SafeAreaProvider>
       <StatusBar
@@ -286,13 +449,15 @@ export default function App() {
       />
       {screen === 'camera' ? (
         <ScannerCamera
+          historyCount={historyRecords.length}
           onCapture={appendCapturedPage}
           onFinish={processCapturedPages}
           onImport={importFromLibrary}
+          onOpenHistory={() => void openHistory()}
           onOpenPage={openCapturedPage}
           pages={pages}
         />
-      ) : (
+      ) : screen === 'review' ? (
         <ReviewWorkspace
           busyPageId={busyPageId}
           onAddPages={() => setScreen('camera')}
@@ -306,6 +471,15 @@ export default function App() {
           onShareCurrent={shareCurrentPage}
           pages={pages}
           selectedPageId={selectedPage?.id ?? ''}
+        />
+      ) : (
+        <ScanHistory
+          loading={historyLoading}
+          onBack={() => setScreen('camera')}
+          onDelete={deleteHistoryRecord}
+          onNewScan={startNewScan}
+          onOpen={openHistoryRecord}
+          records={historyRecords}
         />
       )}
 

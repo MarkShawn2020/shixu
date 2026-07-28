@@ -12,6 +12,8 @@ import {
   Camera,
   Check,
   Flashlight,
+  FlashlightOff,
+  History,
   ImagePlus,
   Sparkles,
 } from 'lucide-react-native';
@@ -19,7 +21,6 @@ import {
   CameraView,
   useCameraPermissions,
   type CameraCapturedPicture,
-  type FlashMode,
 } from 'expo-camera';
 import { File } from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,7 +35,6 @@ import { colors, radii, shadows } from '../theme';
 import type { Point, Quad, ScanPage } from '../types';
 import { PrimaryButton, RoundIconButton } from './Controls';
 
-const flashModes: FlashMode[] = ['off', 'auto', 'on'];
 const cornerKeys = [
   'topLeft',
   'topRight',
@@ -130,13 +130,17 @@ export function ScannerCamera({
   onCapture,
   onImport,
   onFinish,
+  onOpenHistory,
   onOpenPage,
+  historyCount,
 }: {
   pages: ScanPage[];
   onCapture: (photo: CameraCapturedPicture) => Promise<void>;
   onImport: () => Promise<void>;
   onFinish: () => Promise<void>;
+  onOpenHistory: () => void;
   onOpenPage: (pageId: string) => void;
+  historyCount: number;
 }) {
   const cameraRef = useRef<CameraView>(null);
   const cameraBusyRef = useRef(false);
@@ -144,7 +148,7 @@ export function ScannerCamera({
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [flash, setFlash] = useState<FlashMode>('off');
+  const [torchEnabled, setTorchEnabled] = useState(false);
   const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
   const [liveDetection, setLiveDetection] = useState<LiveDetection>();
 
@@ -292,11 +296,6 @@ export function ScannerCamera({
     setCameraLayout({ width, height });
   };
 
-  const cycleFlash = () => {
-    const index = flashModes.indexOf(flash);
-    setFlash(flashModes[(index + 1) % flashModes.length]);
-  };
-
   if (!permission) {
     return <View style={styles.permissionScreen} />;
   }
@@ -321,6 +320,12 @@ export function ScannerCamera({
           label="或者从相册导入"
           onPress={onImport}
           variant="secondary"
+        />
+        <PrimaryButton
+          icon={History}
+          label="查看扫描历史"
+          onPress={onOpenHistory}
+          variant="quiet"
         />
         {pages.length > 0 && (
           <PrimaryButton
@@ -366,8 +371,9 @@ export function ScannerCamera({
             : {})}
           active
           animateShutter={capturing}
+          enableTorch={torchEnabled}
           facing="back"
-          flash={capturing ? flash : 'off'}
+          flash="off"
           mode="picture"
           onCameraReady={() => setReady(true)}
           ref={cameraRef}
@@ -446,12 +452,29 @@ export function ScannerCamera({
             {pages.length ? `已拍 ${pages.length} 页` : '对准纸张，连续拍摄'}
           </Text>
         </View>
-        <RoundIconButton
-          icon={Flashlight}
-          label={`闪光灯：${flash}`}
-          onPress={cycleFlash}
-          tone="dark"
-        />
+        <View style={styles.topActions}>
+          <View>
+            <RoundIconButton
+              icon={History}
+              label={`扫描历史，共 ${historyCount} 份`}
+              onPress={onOpenHistory}
+              tone="dark"
+            />
+            {historyCount > 0 && (
+              <View pointerEvents="none" style={styles.historyBadge}>
+                <Text style={styles.historyBadgeText}>
+                  {historyCount > 99 ? '99+' : historyCount}
+                </Text>
+              </View>
+            )}
+          </View>
+          <RoundIconButton
+            icon={torchEnabled ? Flashlight : FlashlightOff}
+            label={`手电筒：${torchEnabled ? '已开启' : '已关闭'}`}
+            onPress={() => setTorchEnabled((enabled) => !enabled)}
+            tone={torchEnabled ? 'primary' : 'dark'}
+          />
+        </View>
       </SafeAreaView>
 
       {latestPage && (
@@ -608,6 +631,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  historyBadge: {
+    position: 'absolute',
+    right: -4,
+    top: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: colors.camera,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyBadgeText: {
+    color: colors.white,
+    fontSize: 9,
+    fontWeight: '800',
   },
   kicker: {
     color: colors.primarySoft,

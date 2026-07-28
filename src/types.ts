@@ -34,3 +34,10 @@ export type ProcessingProgress = {
   total: number;
   label: string;
 };
+
+export type ScanHistoryRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  pages: ScanPage[];
+};
