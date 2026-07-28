@@ -1,6 +1,6 @@
 # 手工川扫描
 
-一款面向 iPhone、可直接用 Expo Go 运行的本地文件扫描 App。
+一款面向 iPhone、基于 Expo SDK 57 Development Build 运行的本地文件扫描 App。
 
 ## 已实现的产品链路
 
@@ -22,14 +22,34 @@
 - `expo-print`：多页 PDF
 - `expo-media-library` / `expo-sharing`：保存与分享
 
-## 本地运行
+## iPhone Development Build
+
+当前 App Store 版 Expo Go 只支持 SDK 54，本项目使用 SDK 57，因此 iPhone
+通过 Development Build 运行。首次安装时，用数据线连接并解锁 iPhone，然后执行：
 
 ```bash
 npm install
-npx expo start
+npm run ios -- --device
 ```
 
-在 iPhone 安装 Expo Go，扫描终端二维码即可打开。真机相机只在 iOS / Android 设备上工作。
+`npm run ios` 会把项目同步到纯英文临时目录后再运行 Xcode，绕开 CocoaPods
+对中文工程路径的编码问题。Development Build 安装完成后，日常修改 TypeScript
+和界面代码只需启动 Metro：
+
+```bash
+npm start
+```
+
+让 iPhone 与 Mac 处于同一局域网，然后打开手机上的「手工川扫描」。需要让服务
+长期驻留时可使用：
+
+```bash
+tmux new-session -d -s shougongchuan-scan 'npm start'
+tmux attach -t shougongchuan-scan
+```
+
+只有新增或升级原生依赖时才需要重新执行 `npm run ios -- --device`。真机相机只在
+iOS / Android 设备上工作。
 
 ## 检查
 

@@ -1,7 +1,7 @@
 {
   "name": "shougongchuan-scan",
   "version": "1.0.0",
-  "description": "Expo Go document scanner with automatic perspective correction, smart enhancement, watermarking, image export, and PDF export.",
+  "description": "Expo SDK 57 document scanner with automatic perspective correction, smart enhancement, watermarking, image export, and PDF export.",
   "keywords": [
     "expo",
     "react-native",
@@ -16,6 +16,7 @@
     "expo": "~57.0.8",
     "expo-asset": "~57.0.7",
     "expo-camera": "~57.0.3",
+    "expo-dev-client": "~57.0.9",
     "expo-file-system": "~57.0.1",
     "expo-haptics": "~57.0.1",
     "expo-image-manipulator": "~57.0.6",
@@ -40,9 +41,10 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "postinstall": "node scripts/patch-expo-modules-jsi.mjs",
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "node scripts/ios-development-build.mjs",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit --pretty false",
     "doctor": "expo-doctor"
