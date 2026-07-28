@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
+  Check,
   ChevronLeft,
   ChevronRight,
   Crop,
@@ -47,6 +48,7 @@ export function ReviewWorkspace({
   onOpenCorners,
   onChangeFilter,
   onExport,
+  onFinish,
   onShareCurrent,
   onBackToCamera,
 }: {
@@ -60,6 +62,7 @@ export function ReviewWorkspace({
   onOpenCorners: () => void;
   onChangeFilter: (filter: ScanFilter) => Promise<void>;
   onExport: () => void;
+  onFinish: () => Promise<void>;
   onShareCurrent: () => Promise<void>;
   onBackToCamera: () => void;
 }) {
@@ -244,16 +247,24 @@ export function ReviewWorkspace({
         </View>
       </ScrollView>
 
-      <View style={styles.exportBar}>
-        <View>
-          <Text style={styles.exportEyebrow}>输出</Text>
-          <Text style={styles.exportHint}>图片或多页 PDF</Text>
+      <View style={styles.finishBar}>
+        <View style={styles.finishAction}>
+          <PrimaryButton
+            disabled={Boolean(busyPageId)}
+            icon={FileOutput}
+            label="导出"
+            onPress={onExport}
+            variant="secondary"
+          />
         </View>
-        <PrimaryButton
-          icon={FileOutput}
-          label="导出文件"
-          onPress={onExport}
-        />
+        <View style={styles.finishAction}>
+          <PrimaryButton
+            disabled={Boolean(busyPageId)}
+            icon={Check}
+            label="完成文档"
+            onPress={() => void onFinish()}
+          />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -419,32 +430,23 @@ const styles = StyleSheet.create({
   thumbnailNumberTextSelected: {
     color: colors.white,
   },
-  exportBar: {
+  finishBar: {
     position: 'absolute',
     left: 14,
     right: 14,
     bottom: 12,
-    minHeight: 76,
-    paddingHorizontal: 16,
+    minHeight: 80,
+    padding: 12,
     borderRadius: 22,
     backgroundColor: colors.paperStrong,
     borderWidth: 1,
     borderColor: colors.line,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
     ...shadows.floating,
   },
-  exportEyebrow: {
-    color: colors.primaryDark,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  exportHint: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: '700',
-    marginTop: 2,
+  finishAction: {
+    flex: 1,
   },
 });

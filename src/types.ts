@@ -33,6 +33,7 @@ export type ProcessingProgress = {
   current: number;
   total: number;
   label: string;
+  detail?: string;
 };
 
 export type ScanHistoryRecord = {

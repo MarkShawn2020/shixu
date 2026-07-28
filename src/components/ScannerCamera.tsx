@@ -561,10 +561,12 @@ export function ScannerCamera({
           {pages.length ? (
             <Pressable
               accessibilityLabel="完成拍摄"
+              disabled={capturing}
               onPress={onFinish}
               style={({ pressed }) => [
                 styles.doneButton,
                 pressed && { opacity: 0.75 },
+                capturing && { opacity: 0.5 },
               ]}
             >
               <Check color={colors.white} size={22} strokeWidth={2.4} />

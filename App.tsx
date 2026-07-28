@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { CornerEditor } from './src/components/CornerEditor';
 import { ExportPanel } from './src/components/ExportPanel';
 import { ReviewWorkspace } from './src/components/ReviewWorkspace';
+import { ScanComplete } from './src/components/ScanComplete';
 import { ScanHistory } from './src/components/ScanHistory';
 import { ScannerCamera } from './src/components/ScannerCamera';
 import { shareImage } from './src/lib/exportDocuments';
@@ -40,7 +41,7 @@ import type {
   ScanPage,
 } from './src/types';
 
-type AppScreen = 'camera' | 'review' | 'history';
+type AppScreen = 'camera' | 'review' | 'complete' | 'history';
 
 const makePageId = (counter: number) =>
   `${Date.now()}-${counter}-${Math.random().toString(36).slice(2, 7)}`;
@@ -72,11 +73,13 @@ export default function App() {
   const pageCounter = useRef(0);
   const processingQueue = useRef<Promise<void>>(Promise.resolve());
   const processingTasks = useRef(new Map<string, Promise<ScanPage>>());
+  const finishingCapture = useRef(false);
   const historySaveQueue = useRef<Promise<void>>(Promise.resolve());
   const historySaveTimer = useRef<
     ReturnType<typeof setTimeout> | undefined
   >(undefined);
   const activeHistoryId = useRef(createScanHistoryId());
+  const historyReturnScreen = useRef<'camera' | 'complete'>('camera');
   const skipNextHistorySave = useRef(false);
   const [screen, setScreen] = useState<AppScreen>('camera');
   const [pages, setPages] = useState<ScanPage[]>([]);
@@ -228,46 +231,70 @@ export default function App() {
     );
   };
 
-  const processCapturedPages = async () => {
-    if (!pages.length) return;
+  const finishCapture = async () => {
+    if (!pages.length || finishingCapture.current) return;
+    finishingCapture.current = true;
     const working = [...pages];
-    const pendingIndexes = working
-      .map((page, index) => (page.status === 'ready' ? -1 : index))
-      .filter((index) => index >= 0);
+    try {
+      const pendingIndexes = working
+        .map((page, index) => (page.status === 'ready' ? -1 : index))
+        .filter((index) => index >= 0);
 
-    if (!pendingIndexes.length) {
-      setSelectedPageId(
-        selectedPageId && pages.some((page) => page.id === selectedPageId)
-          ? selectedPageId
-          : pages[0].id,
+      for (
+        let position = 0;
+        position < pendingIndexes.length;
+        position += 1
+      ) {
+        const pageIndex = pendingIndexes[position];
+        const page = {
+          ...working[pageIndex],
+          status: 'processing' as const,
+        };
+        working[pageIndex] = page;
+        setPages([...working]);
+        setProcessing({
+          current: position + 1,
+          total: pendingIndexes.length,
+          label: `正在识别第 ${position + 1} 页边缘`,
+        });
+
+        working[pageIndex] = await enqueuePageProcessing(page);
+        setPages([...working]);
+      }
+
+      const readyPages = working.filter(
+        (page) => page.status === 'ready' && page.processedUri,
       );
-      setScreen('review');
-      return;
-    }
+      if (!readyPages.length) {
+        throw new Error('还没有处理完成的扫描页');
+      }
 
-    for (let position = 0; position < pendingIndexes.length; position += 1) {
-      const pageIndex = pendingIndexes[position];
-      const page = { ...working[pageIndex], status: 'processing' as const };
-      working[pageIndex] = page;
-      setPages([...working]);
+      if (historySaveTimer.current) {
+        clearTimeout(historySaveTimer.current);
+        historySaveTimer.current = undefined;
+      }
       setProcessing({
-        current: position + 1,
-        total: pendingIndexes.length,
-        label: `正在识别第 ${position + 1} 页边缘`,
+        current: 1,
+        total: 1,
+        label: '正在保存这份扫描',
+        detail: '正在写入本机文档历史',
       });
+      await queueHistorySave(activeHistoryId.current, readyPages);
 
-      working[pageIndex] = await enqueuePageProcessing(page);
-      setPages([...working]);
-    }
-
-    setProcessing(undefined);
-    const firstReady = working.find((page) => page.status === 'ready');
-    if (firstReady) {
+      const firstReady = readyPages[0];
       setSelectedPageId(firstReady.id);
-      setScreen('review');
+      setScreen('complete');
       await Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Success,
       );
+    } catch (error) {
+      Alert.alert(
+        '扫描还没有完成',
+        error instanceof Error ? error.message : '请稍后再试',
+      );
+    } finally {
+      setProcessing(undefined);
+      finishingCapture.current = false;
     }
   };
 
@@ -374,7 +401,8 @@ export default function App() {
     }
   };
 
-  const openHistory = async () => {
+  const openHistory = async (returnScreen: 'camera' | 'complete') => {
+    historyReturnScreen.current = returnScreen;
     setScreen('history');
     setHistoryLoading(true);
     if (historySaveTimer.current) {
@@ -419,8 +447,12 @@ export default function App() {
     }
     processingTasks.current.clear();
     activeHistoryId.current = createScanHistoryId();
+    historyReturnScreen.current = 'camera';
     setPages([]);
     setSelectedPageId('');
+    setBusyPageId(undefined);
+    setCornerEditorVisible(false);
+    setExportVisible(false);
     setScreen('camera');
   };
 
@@ -431,6 +463,7 @@ export default function App() {
     }
     if (activeHistoryId.current === recordId) {
       activeHistoryId.current = createScanHistoryId();
+      historyReturnScreen.current = 'camera';
       setPages([]);
       setSelectedPageId('');
     }
@@ -451,9 +484,9 @@ export default function App() {
         <ScannerCamera
           historyCount={historyRecords.length}
           onCapture={appendCapturedPage}
-          onFinish={processCapturedPages}
+          onFinish={finishCapture}
           onImport={importFromLibrary}
-          onOpenHistory={() => void openHistory()}
+          onOpenHistory={() => void openHistory('camera')}
           onOpenPage={openCapturedPage}
           pages={pages}
         />
@@ -465,6 +498,7 @@ export default function App() {
           onChangeFilter={changeFilter}
           onDelete={deletePage}
           onExport={() => setExportVisible(true)}
+          onFinish={finishCapture}
           onMove={movePage}
           onOpenCorners={() => setCornerEditorVisible(true)}
           onSelect={setSelectedPageId}
@@ -472,10 +506,24 @@ export default function App() {
           pages={pages}
           selectedPageId={selectedPage?.id ?? ''}
         />
+      ) : screen === 'complete' ? (
+        <ScanComplete
+          onEdit={() => setScreen('review')}
+          onExport={() => setExportVisible(true)}
+          onNewScan={startNewScan}
+          onOpenHistory={() => void openHistory('complete')}
+          pages={pages}
+        />
       ) : (
         <ScanHistory
           loading={historyLoading}
-          onBack={() => setScreen('camera')}
+          onBack={() =>
+            setScreen(
+              historyReturnScreen.current === 'complete' && pages.length
+                ? 'complete'
+                : 'camera',
+            )
+          }
           onDelete={deleteHistoryRecord}
           onNewScan={startNewScan}
           onOpen={openHistoryRecord}
@@ -517,7 +565,8 @@ export default function App() {
               />
             </View>
             <Text style={styles.processingMeta}>
-              {processing.current} / {processing.total} · 透视校正与智能提亮
+              {processing.detail ??
+                `${processing.current} / ${processing.total} · 透视校正与智能提亮`}
             </Text>
           </View>
         </View>
