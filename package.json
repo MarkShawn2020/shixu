@@ -41,7 +41,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-expo-modules-jsi.mjs",
+    "postinstall": "node scripts/patch-expo-modules-jsi.mjs && node scripts/patch-expo-camera-live-document.mjs",
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "node scripts/ios-development-build.mjs",
@@ -49,6 +49,15 @@
     "test:detection": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-document-detection.mjs",
     "typecheck": "tsc --noEmit --pretty false",
     "doctor": "expo-doctor"
+  },
+  "expo": {
+    "autolinking": {
+      "ios": {
+        "buildFromSource": [
+          "expo-camera"
+        ]
+      }
+    }
   },
   "private": true
 }

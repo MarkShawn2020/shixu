@@ -48,6 +48,8 @@ type WatermarkPixels = {
 
 let watermarkCache: Promise<WatermarkPixels> | undefined;
 
+export const hasNativeDocumentVision = Boolean(DocumentVisionModule);
+
 if (!(globalThis as typeof globalThis & { Buffer?: typeof Buffer }).Buffer) {
   (globalThis as typeof globalThis & { Buffer?: typeof Buffer }).Buffer = Buffer;
 }

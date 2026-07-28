@@ -5,7 +5,7 @@
 ## 已实现的产品链路
 
 - 连续拍摄多页文件，也可一次从相册导入多张图片
-- 取景时近实时识别纸张边缘，动态显示四角锁定结果
+- 取景时直接分析原生相机视频帧，首个高置信结果立即锁定四角
 - 每页拍完立即排队处理，并显示标准化、提亮后的预览
 - 自动根据画面与页面内容确定四角和安全边距，也支持手动微调
 - 透视几何变换，把斜拍文件标准化为平整页面
@@ -19,6 +19,7 @@
 
 - Expo SDK 57、React Native 0.86、TypeScript
 - `expo-camera`：连续拍摄
+- AVFoundation `AVCaptureVideoDataOutput`：丢弃积压帧并以 100ms 节流驱动实时四角识别
 - Apple Vision `VNDetectDocumentSegmentationRequest`：结合页面内容识别纸张四角
 - Apple Vision `VNDetectRectanglesRequest`：文档分割没有结果时的原生后备检测
 - `expo-image-manipulator`：拍摄图预缩放与方向标准化

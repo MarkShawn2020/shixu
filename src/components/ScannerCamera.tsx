@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -26,7 +26,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 
-import { detectDocumentPreview } from '../lib/imagePipeline';
+import {
+  detectDocumentPreview,
+  hasNativeDocumentVision,
+} from '../lib/imagePipeline';
 import { colors, radii, shadows } from '../theme';
 import type { Point, Quad, ScanPage } from '../types';
 import { PrimaryButton, RoundIconButton } from './Controls';
@@ -38,7 +41,8 @@ const cornerKeys = [
   'bottomRight',
   'bottomLeft',
 ] as const;
-const LIVE_SCAN_DELAY = 620;
+const LIVE_SCAN_DELAY = 320;
+const INITIAL_SCAN_DELAY = 80;
 const CAMERA_VIEW_ASPECT_RATIO = 3 / 4;
 
 type LiveDetection = {
@@ -48,6 +52,16 @@ type LiveDetection = {
   imageHeight: number;
   usedFallback: boolean;
   stable: boolean;
+};
+
+type NativeDocumentDetectionEvent = {
+  nativeEvent: {
+    quad?: Quad;
+    confidence: number;
+    area: number;
+    imageWidth?: number;
+    imageHeight?: number;
+  };
 };
 
 const delay = (milliseconds: number) =>
@@ -127,7 +141,6 @@ export function ScannerCamera({
   const cameraRef = useRef<CameraView>(null);
   const cameraBusyRef = useRef(false);
   const captureIntentRef = useRef(false);
-  const stableDetectionsRef = useRef(0);
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -135,8 +148,77 @@ export function ScannerCamera({
   const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
   const [liveDetection, setLiveDetection] = useState<LiveDetection>();
 
+  const applyLiveDetection = useCallback(
+    (
+      detection: Omit<
+        LiveDetection,
+        'imageWidth' | 'imageHeight' | 'stable'
+      >,
+      imageWidth: number,
+      imageHeight: number,
+    ) => {
+      if (detection.usedFallback || detection.confidence < 0.52) {
+        setLiveDetection(undefined);
+        return;
+      }
+
+      setLiveDetection((previous) => {
+        const movement =
+          previous && !previous.usedFallback
+            ? averageQuadMovement(previous.quad, detection.quad)
+            : 1;
+        const nearlyStationary =
+          previous && !previous.usedFallback && movement < 0.014;
+        return {
+          quad: nearlyStationary
+            ? blendQuad(previous.quad, detection.quad, 0.2)
+            : detection.quad,
+          confidence: detection.confidence,
+          imageWidth,
+          imageHeight,
+          usedFallback: false,
+          stable: detection.confidence >= 0.62,
+        };
+      });
+    },
+    [],
+  );
+
+  const handleNativeDocumentDetected = useCallback(
+    (event: NativeDocumentDetectionEvent) => {
+      if (captureIntentRef.current) return;
+      const {
+        quad,
+        confidence,
+        imageWidth = 3,
+        imageHeight = 4,
+      } = event.nativeEvent;
+      if (!quad || confidence < 0.52) {
+        setLiveDetection(undefined);
+        return;
+      }
+      applyLiveDetection(
+        {
+          quad,
+          confidence,
+          usedFallback: false,
+        },
+        imageWidth,
+        imageHeight,
+      );
+    },
+    [applyLiveDetection],
+  );
+
   useEffect(() => {
-    if (!ready || !permission?.granted || capturing) return;
+    if (
+      hasNativeDocumentVision ||
+      !ready ||
+      !permission?.granted ||
+      capturing
+    ) {
+      return;
+    }
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -162,40 +244,11 @@ export function ScannerCamera({
         if (!sample || cancelled || captureIntentRef.current) return;
         const detection = await detectDocumentPreview(sample.uri);
         if (cancelled || captureIntentRef.current) return;
-
-        setLiveDetection((previous) => {
-          if (detection.usedFallback) {
-            stableDetectionsRef.current = 0;
-            return {
-              quad: detection.quad,
-              confidence: detection.confidence,
-              imageWidth: sample?.width ?? 1,
-              imageHeight: sample?.height ?? 1,
-              usedFallback: true,
-              stable: false,
-            };
-          }
-          const movement =
-            previous && !previous.usedFallback
-              ? averageQuadMovement(previous.quad, detection.quad)
-              : 1;
-          const consistent =
-            movement < 0.028 && detection.confidence >= 0.62;
-          stableDetectionsRef.current = consistent
-            ? stableDetectionsRef.current + 1
-            : 0;
-          return {
-            quad:
-              previous && !previous.usedFallback && movement < 0.12
-                ? blendQuad(previous.quad, detection.quad, 0.42)
-                : detection.quad,
-            confidence: detection.confidence,
-            imageWidth: sample?.width ?? 1,
-            imageHeight: sample?.height ?? 1,
-            usedFallback: false,
-            stable: stableDetectionsRef.current >= 2,
-          };
-        });
+        applyLiveDetection(
+          detection,
+          sample.width ?? 1,
+          sample.height ?? 1,
+        );
       } catch {
         // The next sample retries automatically; manual capture stays available.
       } finally {
@@ -205,13 +258,12 @@ export function ScannerCamera({
       }
     };
 
-    schedule(420);
+    schedule(INITIAL_SCAN_DELAY);
     return () => {
       cancelled = true;
-      stableDetectionsRef.current = 0;
       if (timer) clearTimeout(timer);
     };
-  }, [capturing, permission?.granted, ready]);
+  }, [applyLiveDetection, capturing, permission?.granted, ready]);
 
   const capture = async () => {
     if (!ready || capturing) return;
@@ -309,9 +361,11 @@ export function ScannerCamera({
     <View style={styles.container}>
       <View onLayout={measureCamera} style={styles.cameraViewport}>
         <CameraView
+          {...(hasNativeDocumentVision
+            ? { onDocumentDetected: handleNativeDocumentDetected }
+            : {})}
           active
           animateShutter={capturing}
-          autofocus="on"
           facing="back"
           flash={capturing ? flash : 'off'}
           mode="picture"
