@@ -253,6 +253,118 @@ private func standardizeDocument(_ image: CIImage) -> CIImage {
   return normalizeOrigin(filter.outputImage ?? image)
 }
 
+private func median(_ values: [CGFloat]) -> CGFloat? {
+  guard !values.isEmpty else {
+    return nil
+  }
+  let sorted = values.sorted()
+  let middle = sorted.count / 2
+  if sorted.count.isMultiple(of: 2) {
+    return (sorted[middle - 1] + sorted[middle]) / 2
+  }
+  return sorted[middle]
+}
+
+private func robustHorizontalShear(
+  from points: [CGPoint]
+) -> CGFloat? {
+  guard points.count >= 4 else {
+    return nil
+  }
+  let verticalSpan =
+    (points.map(\.y).max() ?? 0) - (points.map(\.y).min() ?? 0)
+  guard verticalSpan >= 0.28 else {
+    return nil
+  }
+
+  var slopes: [CGFloat] = []
+  for firstIndex in points.indices {
+    for secondIndex in points.indices where secondIndex > firstIndex {
+      let deltaY = points[secondIndex].y - points[firstIndex].y
+      guard abs(deltaY) >= 0.1 else {
+        continue
+      }
+      let slope =
+        (points[secondIndex].x - points[firstIndex].x) / deltaY
+      if abs(slope) <= 0.24 {
+        slopes.append(slope)
+      }
+    }
+  }
+  return median(slopes)
+}
+
+private func contentGuidedDeskew(_ image: CIImage) -> CIImage {
+  let extent = image.extent
+  let shortEdge = min(extent.width, extent.height)
+  guard shortEdge > 0 else {
+    return image
+  }
+
+  let analysisScale = min(1, 1_200 / shortEdge)
+  let analysisImage = image.transformed(
+    by: CGAffineTransform(
+      scaleX: analysisScale,
+      y: analysisScale
+    )
+  )
+  guard let analysisCGImage = documentRenderContext.createCGImage(
+    analysisImage,
+    from: analysisImage.extent.integral
+  ) else {
+    return image
+  }
+
+  let request = VNRecognizeTextRequest()
+  request.recognitionLevel = .fast
+  request.usesLanguageCorrection = false
+  request.minimumTextHeight = 0.007
+  let handler = VNImageRequestHandler(
+    cgImage: analysisCGImage,
+    orientation: .up,
+    options: [:]
+  )
+  guard
+    (try? handler.perform([request])) != nil,
+    let observations = request.results
+  else {
+    return image
+  }
+
+  let marginPoints = observations.compactMap { observation -> CGPoint? in
+    let bounds = observation.boundingBox
+    guard
+      bounds.width >= 0.08,
+      bounds.height >= 0.007,
+      bounds.height <= 0.06,
+      bounds.minX >= 0.035,
+      bounds.minX <= 0.24,
+      bounds.midY >= 0.08,
+      bounds.midY <= 0.95
+    else {
+      return nil
+    }
+    return CGPoint(x: bounds.minX, y: bounds.midY)
+  }
+
+  guard
+    let measuredShear = robustHorizontalShear(from: marginPoints),
+    abs(measuredShear) >= 0.012
+  else {
+    return image
+  }
+  let shear = min(0.12, max(-0.12, measuredShear))
+  let transform = CGAffineTransform(
+    a: 1,
+    b: 0,
+    c: -shear * extent.width / extent.height,
+    d: 1,
+    tx: shear * extent.width / 2,
+    ty: 0
+  )
+  return image.transformed(by: transform).cropped(to: extent)
+}
+
 private func enhanceDocument(
   _ image: CIImage,
   scanFilter: String
@@ -352,8 +464,9 @@ private func renderDocument(
     throw DocumentVisionError.perspectiveCorrectionFailed
   }
   let standardized = standardizeDocument(normalizeOrigin(corrected))
+  let contentAligned = contentGuidedDeskew(standardized)
   let enhanced = normalizeOrigin(
-    enhanceDocument(standardized, scanFilter: scanFilter)
+    enhanceDocument(contentAligned, scanFilter: scanFilter)
   )
   let outputExtent = enhanced.extent.integral
   guard

@@ -23,6 +23,7 @@
 - Apple Vision `VNDetectRectanglesRequest`：文档分割没有结果时的原生后备检测
 - `expo-image-manipulator`：拍摄图预缩放与方向标准化
 - iOS Core Image：原生 GPU 透视校正、A 系列纸张比例标准化、`CIDocumentEnhancer` 文档增强、灰度/黑白滤镜与高质量 JPEG 输出
+- Vision 文字行二次校准：纸边首次拉直后，按正文行的公共边距检查并消除残余横向透视
 - 纯 TypeScript：结果校验，以及 Expo Go 或原生链路异常时的完整后备处理
 - `expo-print`：多页 PDF
 - `expo-media-library` / `expo-sharing`：保存与分享
