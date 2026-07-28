@@ -212,89 +212,85 @@ private func normalizeOrigin(_ image: CIImage) -> CIImage {
   )
 }
 
-private func resizeDocument(_ image: CIImage) -> CIImage {
+private func standardizeDocument(_ image: CIImage) -> CIImage {
   let extent = image.extent
-  let shortEdge = min(extent.width, extent.height)
-  let longEdge = max(extent.width, extent.height)
-  guard shortEdge > 0, longEdge > 0 else {
+  let sourceShortEdge = min(extent.width, extent.height)
+  let sourceLongEdge = max(extent.width, extent.height)
+  guard sourceShortEdge > 0, sourceLongEdge > 0 else {
     return image
   }
 
-  let scale = min(1, min(1_120 / shortEdge, 1_800 / longEdge))
-  guard scale < 0.999 else {
-    return image
+  let portrait = extent.height >= extent.width
+  let inferredRatio = sourceShortEdge / sourceLongEdge
+  let aSeriesRatio = 1 / CGFloat(sqrt(2.0))
+  let normalizedRatio =
+    portrait && inferredRatio >= 0.58 && inferredRatio <= 0.82
+      ? aSeriesRatio
+      : inferredRatio
+
+  var targetShortEdge = min(1_600, sourceShortEdge)
+  var targetLongEdge = targetShortEdge / normalizedRatio
+  if targetLongEdge > 2_600 {
+    targetLongEdge = 2_600
+    targetShortEdge = targetLongEdge * normalizedRatio
   }
+
+  let targetWidth = portrait ? targetShortEdge : targetLongEdge
+  let targetHeight = portrait ? targetLongEdge : targetShortEdge
+  let scaleX = targetWidth / extent.width
+  let scaleY = targetHeight / extent.height
 
   guard let filter = CIFilter(name: "CILanczosScaleTransform") else {
-    return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    return normalizeOrigin(
+      image.transformed(
+        by: CGAffineTransform(scaleX: scaleX, y: scaleY)
+      )
+    )
   }
   filter.setValue(image, forKey: kCIInputImageKey)
-  filter.setValue(scale, forKey: kCIInputScaleKey)
-  filter.setValue(1, forKey: kCIInputAspectRatioKey)
+  filter.setValue(scaleY, forKey: kCIInputScaleKey)
+  filter.setValue(scaleX / scaleY, forKey: kCIInputAspectRatioKey)
   return normalizeOrigin(filter.outputImage ?? image)
-}
-
-private func averageLuminance(of image: CIImage) -> Double {
-  guard let filter = CIFilter(name: "CIAreaAverage") else {
-    return 0.72
-  }
-  filter.setValue(image, forKey: kCIInputImageKey)
-  filter.setValue(CIVector(cgRect: image.extent), forKey: kCIInputExtentKey)
-  guard let averageImage = filter.outputImage else {
-    return 0.72
-  }
-
-  var pixel = [UInt8](repeating: 0, count: 4)
-  documentRenderContext.render(
-    averageImage,
-    toBitmap: &pixel,
-    rowBytes: 4,
-    bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-    format: .RGBA8,
-    colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
-  )
-  return (
-    Double(pixel[0]) * 0.299 +
-    Double(pixel[1]) * 0.587 +
-    Double(pixel[2]) * 0.114
-  ) / 255
 }
 
 private func enhanceDocument(
   _ image: CIImage,
   scanFilter: String
 ) -> CIImage {
-  let luminance = averageLuminance(of: image)
-  let exposure = min(
-    0.68,
-    max(-0.08, log2(0.78 / max(0.16, luminance)) * 0.54)
-  )
+  let documentAmount: Double
+  switch scanFilter {
+  case "blackwhite":
+    documentAmount = 1.65
+  case "grayscale":
+    documentAmount = 1.5
+  default:
+    documentAmount = 1.55
+  }
 
   var output = applyFilter(
-    "CIHighlightShadowAdjust",
+    "CIDocumentEnhancer",
     to: image,
-    values: [
-      "inputShadowAmount": 0.48,
-      "inputHighlightAmount": 0.9
-    ]
-  )
-  output = applyFilter(
-    "CIExposureAdjust",
-    to: output,
-    values: [kCIInputEVKey: exposure]
+    values: [kCIInputAmountKey: documentAmount]
   )
 
   switch scanFilter {
   case "blackwhite":
-    output = applyFilter("CIColorThresholdOtsu", to: output)
+    output = applyFilter(
+      "CIColorControls",
+      to: output,
+      values: [
+        kCIInputSaturationKey: 0,
+        kCIInputContrastKey: 1.2,
+        kCIInputBrightnessKey: 0.008
+      ]
+    )
   case "grayscale":
     output = applyFilter(
       "CIColorControls",
       to: output,
       values: [
         kCIInputSaturationKey: 0,
-        kCIInputContrastKey: 1.16,
-        kCIInputBrightnessKey: 0.018
+        kCIInputContrastKey: 1.1
       ]
     )
   default:
@@ -302,18 +298,18 @@ private func enhanceDocument(
       "CIColorControls",
       to: output,
       values: [
-        kCIInputSaturationKey: 0.96,
-        kCIInputContrastKey: 1.1,
-        kCIInputBrightnessKey: 0.012
+        kCIInputSaturationKey: 0.94,
+        kCIInputContrastKey: 1.06
       ]
     )
   }
 
   return applyFilter(
-    "CISharpenLuminance",
+    "CIUnsharpMask",
     to: output,
     values: [
-      kCIInputSharpnessKey: scanFilter == "blackwhite" ? 0.18 : 0.3
+      kCIInputRadiusKey: 1.15,
+      kCIInputIntensityKey: scanFilter == "color" ? 0.56 : 0.62
     ]
   )
 }
@@ -355,9 +351,9 @@ private func renderDocument(
   guard let corrected = perspective.outputImage else {
     throw DocumentVisionError.perspectiveCorrectionFailed
   }
-  let resized = resizeDocument(normalizeOrigin(corrected))
+  let standardized = standardizeDocument(normalizeOrigin(corrected))
   let enhanced = normalizeOrigin(
-    enhanceDocument(resized, scanFilter: scanFilter)
+    enhanceDocument(standardized, scanFilter: scanFilter)
   )
   let outputExtent = enhanced.extent.integral
   guard
@@ -385,7 +381,7 @@ private func renderDocument(
     destination,
     renderedImage,
     [
-      kCGImageDestinationLossyCompressionQuality: 0.9
+      kCGImageDestinationLossyCompressionQuality: 0.94
     ] as CFDictionary
   )
   guard CGImageDestinationFinalize(destination) else {

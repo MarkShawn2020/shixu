@@ -221,7 +221,7 @@ export function ScannerCamera({
       while (cameraBusyRef.current) await delay(35);
       cameraBusyRef.current = true;
       const photo = await cameraRef.current?.takePictureAsync({
-        quality: 0.94,
+        quality: 1,
         exif: false,
         shutterSound: true,
         skipProcessing: false,

@@ -31,7 +31,7 @@ import {
 } from './Controls';
 
 const filterSegments: { value: ScanFilter; label: string }[] = [
-  { value: 'color', label: '智能彩色' },
+  { value: 'color', label: '智能高清' },
   { value: 'grayscale', label: '灰度' },
   { value: 'blackwhite', label: '黑白' },
 ];
@@ -133,7 +133,7 @@ export function ReviewWorkspace({
           <View style={styles.autoBadge}>
             <Sparkles color={colors.primaryDark} size={14} />
             <Text style={styles.autoBadgeText}>
-              {lowConfidence ? '建议检查边缘' : '已自动拉直 · 智能提亮'}
+              {lowConfidence ? '建议检查边缘' : '已标准化 · 智能高清'}
             </Text>
           </View>
         </View>
