@@ -1,0 +1,51 @@
+{
+  "name": "shougongchuan-scan",
+  "version": "1.0.0",
+  "description": "Expo Go document scanner with automatic perspective correction, smart enhancement, watermarking, image export, and PDF export.",
+  "keywords": [
+    "expo",
+    "react-native",
+    "document-scanner",
+    "pdf",
+    "ios"
+  ],
+  "main": "index.ts",
+  "dependencies": {
+    "base64-js": "^1.5.1",
+    "buffer": "^6.0.3",
+    "expo": "~57.0.8",
+    "expo-asset": "~57.0.7",
+    "expo-camera": "~57.0.3",
+    "expo-file-system": "~57.0.1",
+    "expo-haptics": "~57.0.1",
+    "expo-image-manipulator": "~57.0.6",
+    "expo-image-picker": "~57.0.6",
+    "expo-linear-gradient": "~57.0.1",
+    "expo-media-library": "~57.0.3",
+    "expo-print": "~57.0.1",
+    "expo-sharing": "~57.0.7",
+    "expo-status-bar": "~57.0.1",
+    "jpeg-js": "^0.4.4",
+    "lucide-react-native": "^1.27.0",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4"
+  },
+  "devDependencies": {
+    "@types/base64-js": "^1.3.2",
+    "@types/jpeg-js": "^0.3.0",
+    "@types/react": "~19.2.2",
+    "expo-doctor": "^1.20.1",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit --pretty false",
+    "doctor": "expo-doctor"
+  },
+  "private": true
+}

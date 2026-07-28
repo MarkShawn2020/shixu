@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "手工川扫描",
+    "slug": "shougongchuan-scan",
+    "scheme": "shougongchuanscan",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lovstudio.shougongchuanscan",
+      "infoPlist": {
+        "NSCameraUsageDescription": "用于连续拍摄并扫描纸质文件。",
+        "NSPhotoLibraryAddUsageDescription": "用于将扫描后的图片保存到相册。",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许手工川扫描使用相机拍摄并扫描文件",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "允许手工川扫描访问照片",
+          "savePhotosPermission": "允许手工川扫描保存扫描结果",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
+      ],
+      "expo-sharing",
+      "expo-asset"
+    ]
+  }
+}
