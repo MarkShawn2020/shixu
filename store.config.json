@@ -44,7 +44,16 @@
         "promoText": "无需账号，不经过云端：连续拍摄、自动校正、智能提亮，多页扫描直接导出 PDF 或高清图片。",
         "marketingUrl": "https://github.com/MarkShawn2020/shixu",
         "supportUrl": "https://github.com/MarkShawn2020/shixu/issues",
-        "privacyPolicyUrl": "https://lovstudio.ai/privacy"
+        "privacyPolicyUrl": "https://lovstudio.ai/privacy",
+        "screenshots": {
+          "APP_IPHONE_67": [
+            "./docs/app-store/screenshots/01-local-private.png",
+            "./docs/app-store/screenshots/02-scan-complete.png",
+            "./docs/app-store/screenshots/03-local-enhancement.png",
+            "./docs/app-store/screenshots/04-local-export.png",
+            "./docs/app-store/screenshots/05-privacy-about.png"
+          ]
+        }
       }
     },
     "release": {
