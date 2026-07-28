@@ -39,6 +39,7 @@ const cornerKeys = [
   'bottomLeft',
 ] as const;
 const LIVE_SCAN_DELAY = 620;
+const CAMERA_VIEW_ASPECT_RATIO = 3 / 4;
 
 type LiveDetection = {
   quad: Quad;
@@ -305,23 +306,84 @@ export function ScannerCamera({
   );
 
   return (
-    <View onLayout={measureCamera} style={styles.container}>
-      <CameraView
-        active
-        animateShutter={capturing}
-        facing="back"
-        flash={capturing ? flash : 'off'}
-        mode="picture"
-        onCameraReady={() => setReady(true)}
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={['rgba(0,0,0,0.58)', 'transparent', 'rgba(0,0,0,0.78)']}
-        locations={[0, 0.42, 1]}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFill}
-      />
+    <View style={styles.container}>
+      <View onLayout={measureCamera} style={styles.cameraViewport}>
+        <CameraView
+          active
+          animateShutter={capturing}
+          autofocus="on"
+          facing="back"
+          flash={capturing ? flash : 'off'}
+          mode="picture"
+          onCameraReady={() => setReady(true)}
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={['rgba(0,0,0,0.58)', 'transparent', 'rgba(0,0,0,0.42)']}
+          locations={[0, 0.42, 1]}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+        />
+
+        {detectedPoints && detectedPointString ? (
+          <View pointerEvents="none" style={styles.liveEdgeOverlay}>
+            <Svg height="100%" width="100%">
+              <Polygon
+                fill={
+                  paperLocked
+                    ? 'rgba(132,149,122,0.13)'
+                    : 'rgba(217,119,87,0.11)'
+                }
+                points={detectedPointString}
+                stroke={paperLocked ? colors.sageSoft : colors.primarySoft}
+                strokeLinejoin="round"
+                strokeWidth={4}
+              />
+              {detectedPoints.map((point, index) => (
+                <Circle
+                  cx={point.x}
+                  cy={point.y}
+                  fill={paperLocked ? colors.sageSoft : colors.primarySoft}
+                  key={cornerKeys[index]}
+                  r={6}
+                  stroke="rgba(17,17,15,0.5)"
+                  strokeWidth={2}
+                />
+              ))}
+            </Svg>
+          </View>
+        ) : (
+          <View pointerEvents="none" style={styles.guideWrap}>
+            <Svg height="100%" width="100%">
+              <Path
+                d="M36 92 V48 Q36 36 48 36 H92 M268 36 H312 Q324 36 324 48 V92 M324 368 V412 Q324 424 312 424 H268 M92 424 H48 Q36 424 36 412 V368"
+                fill="none"
+                stroke={colors.primarySoft}
+                strokeLinecap="round"
+                strokeWidth={4}
+                vectorEffect="non-scaling-stroke"
+              />
+            </Svg>
+          </View>
+        )}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.guideCaption,
+            paperLocked && styles.guideCaptionLocked,
+          ]}
+        >
+          <Sparkles color={colors.primarySoft} size={15} />
+          <Text style={styles.guideCaptionText}>
+            {paperLocked
+              ? '已锁定纸张边缘'
+              : detectedPoints
+                ? '正在稳定四角'
+                : '正在识别纸张'}
+          </Text>
+        </View>
+      </View>
 
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View>
@@ -337,64 +399,6 @@ export function ScannerCamera({
           tone="dark"
         />
       </SafeAreaView>
-
-      {detectedPoints && detectedPointString ? (
-        <View pointerEvents="none" style={styles.liveEdgeOverlay}>
-          <Svg height="100%" width="100%">
-            <Polygon
-              fill={
-                paperLocked
-                  ? 'rgba(132,149,122,0.13)'
-                  : 'rgba(217,119,87,0.11)'
-              }
-              points={detectedPointString}
-              stroke={paperLocked ? colors.sageSoft : colors.primarySoft}
-              strokeLinejoin="round"
-              strokeWidth={4}
-            />
-            {detectedPoints.map((point, index) => (
-              <Circle
-                cx={point.x}
-                cy={point.y}
-                fill={paperLocked ? colors.sageSoft : colors.primarySoft}
-                key={cornerKeys[index]}
-                r={6}
-                stroke="rgba(17,17,15,0.5)"
-                strokeWidth={2}
-              />
-            ))}
-          </Svg>
-        </View>
-      ) : (
-        <View pointerEvents="none" style={styles.guideWrap}>
-          <Svg height="100%" width="100%">
-            <Path
-              d="M36 92 V48 Q36 36 48 36 H92 M268 36 H312 Q324 36 324 48 V92 M324 368 V412 Q324 424 312 424 H268 M92 424 H48 Q36 424 36 412 V368"
-              fill="none"
-              stroke={colors.primarySoft}
-              strokeLinecap="round"
-              strokeWidth={4}
-              vectorEffect="non-scaling-stroke"
-            />
-          </Svg>
-        </View>
-      )}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.guideCaption,
-          paperLocked && styles.guideCaptionLocked,
-        ]}
-      >
-        <Sparkles color={colors.primarySoft} size={15} />
-        <Text style={styles.guideCaptionText}>
-          {paperLocked
-            ? '已锁定纸张边缘'
-            : detectedPoints
-              ? '正在稳定四角'
-              : '正在识别纸张'}
-        </Text>
-      </View>
 
       {latestPage && (
         <Pressable
@@ -506,6 +510,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.camera,
   },
+  cameraViewport: {
+    width: '100%',
+    aspectRatio: CAMERA_VIEW_ASPECT_RATIO,
+    overflow: 'hidden',
+    backgroundColor: colors.cameraSoft,
+  },
   permissionScreen: {
     flex: 1,
     paddingHorizontal: 28,
@@ -535,6 +545,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 20,
     paddingTop: 8,
     flexDirection: 'row',
