@@ -447,7 +447,7 @@ export function ScannerCamera({
 
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View>
-          <Text style={styles.kicker}>手工川扫描</Text>
+          <Text style={styles.kicker}>拾序</Text>
           <Text style={styles.cameraTitle}>
             {pages.length ? `已拍 ${pages.length} 页` : '对准纸张，连续拍摄'}
           </Text>

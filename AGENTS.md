@@ -4,7 +4,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 
 ## Project
 
-- Product name: 手工川扫描
+- Product name: 拾序
 - Runtime target: Expo Go on iOS, Expo SDK 57
 - Keep document processing local to the device.
 - Keep the capture-to-export workflow usable without accounts or a backend.
