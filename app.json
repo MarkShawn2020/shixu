@@ -79,6 +79,7 @@
         "expo-camera",
         {
           "cameraPermission": "允许拾序使用相机拍摄并扫描文件",
+          "microphonePermission": false,
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": false
         }
@@ -86,8 +87,8 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "允许拾序访问照片",
-          "savePhotosPermission": "允许拾序保存扫描结果",
+          "photosPermission": "用于导入你选择的照片，并在设备本地整理为扫描文档。",
+          "savePhotosPermission": "用于将你导出的扫描图片保存到系统相册。",
           "granularPermissions": [
             "photo"
           ]
