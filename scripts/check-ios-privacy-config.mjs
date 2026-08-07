@@ -1,7 +1,12 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const scannerSource = readFileSync(
+  new URL('../src/components/ScannerCamera.tsx', import.meta.url),
+  'utf8',
+);
 const expoCli = require.resolve('expo/bin/cli');
 const result = spawnSync(
   process.execPath,
@@ -31,6 +36,18 @@ for (const [key, value] of Object.entries(infoPlist)) {
   if (/^Allow .* to access your /i.test(String(value))) {
     problems.push(`${key} 仍是 Expo 默认占位文案`);
   }
+}
+
+if (/label=["']允许[^"']*权限["']/.test(scannerSource)) {
+  problems.push('系统权限弹窗前的自定义按钮需要使用“继续”等中性文案');
+}
+
+if (
+  !/label=\{canRequestCamera \? '继续' : '打开系统设置'\}/.test(
+    scannerSource,
+  )
+) {
+  problems.push('相机首次授权入口需要保留中性的“继续”按钮');
 }
 
 if (problems.length > 0) {

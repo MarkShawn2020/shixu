@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Linking,
   type LayoutChangeEvent,
   Pressable,
   StyleSheet,
@@ -304,23 +305,33 @@ export function ScannerCamera({
   }
 
   if (!permission.granted) {
+    const canRequestCamera = permission.canAskAgain;
+
     return (
       <SafeAreaView style={styles.permissionScreen}>
         <View style={styles.permissionMark}>
           <Camera color={colors.primary} size={34} />
         </View>
-        <Text style={styles.permissionTitle}>先允许使用相机</Text>
+        <Text style={styles.permissionTitle}>
+          {canRequestCamera ? '使用相机扫描文件' : '相机访问已关闭'}
+        </Text>
         <Text style={styles.permissionBody}>
-          相机只用于拍摄纸质文件。照片会留在手机本地，不会上传。
+          {canRequestCamera
+            ? '相机仅用于拍摄纸质文件，照片只保存在这台设备上。'
+            : '可在系统设置中开启相机，也可以继续从相册导入文件。'}
         </Text>
         <PrimaryButton
           icon={Camera}
-          label="允许相机权限"
-          onPress={requestPermission}
+          label={canRequestCamera ? '继续' : '打开系统设置'}
+          onPress={
+            canRequestCamera
+              ? requestPermission
+              : () => void Linking.openSettings()
+          }
         />
         <PrimaryButton
           icon={ImagePlus}
-          label="或者从相册导入"
+          label="从相册导入"
           onPress={onImport}
           variant="secondary"
         />
